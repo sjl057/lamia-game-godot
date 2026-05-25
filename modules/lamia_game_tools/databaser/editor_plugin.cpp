@@ -1,4 +1,3 @@
-#include "core/string/print_string.h"
 #ifdef TOOLS_ENABLED
 
 #include "editor_plugin.h"
@@ -17,6 +16,7 @@
 #include "modules/lamia_game_utils/general/defs.h"
 #include "scene/main/node.h"
 #include "editor/editor_string_names.h"
+#include "core/string/print_string.h"
 
 DatabaseEditorDock::DatabaseEditorDock()
 {
@@ -364,9 +364,9 @@ void EditorPropertyDatabaseSelect::_on_path_changed(StringName p_new_path)
 
 bool EditorInspectorPluginDatabaser::parse_property(Object *p_object, Variant::Type p_type, const String &p_name, PropertyHint p_hint_type, const String &p_hint_string, BitField<PropertyUsageFlags> p_usage_flags, bool p_wide)
 {
-    switch (static_cast<LGUPropertyHint>(p_hint_type))
+    switch (static_cast<LGTPropertyHint>(p_hint_type))
     {
-        case LGU_PROPERTY_HINT_DATABASE_ID_SELECT:
+        case LGT_PROPERTY_HINT_DATABASE_ID_SELECT:
             if ((p_type == Variant::STRING_NAME or p_type == Variant::STRING) and Databaser::has_type(p_hint_string))
             {
                 EditorPropertyDatabaseSelect *editor = memnew(EditorPropertyDatabaseSelect);
@@ -375,7 +375,7 @@ bool EditorInspectorPluginDatabaser::parse_property(Object *p_object, Variant::T
                 return true;
             }
             return false;
-        case LGU_PROPERTY_HINT_DATABASE_SELECT:
+        case LGT_PROPERTY_HINT_DATABASE_SELECT:
             if (p_type == Variant::OBJECT and Databaser::has_type(p_hint_string))
             {
                 
@@ -392,6 +392,7 @@ void EditorPluginDatabaser::_notification(int p_what)
     switch (p_what)
     {   
         case NOTIFICATION_ENTER_TREE:
+            GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "databaser/config/database", PROPERTY_HINT_FILE, "*.tres"), "");
             inspector_plugin = memnew(EditorInspectorPluginDatabaser);
             add_inspector_plugin(inspector_plugin);
 
@@ -405,11 +406,6 @@ void EditorPluginDatabaser::_notification(int p_what)
             editor_dock->queue_free();
             break;
     }
-}
-
-void EditorPluginDatabaser::enable_plugin()
-{
-    GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "databaser/config/database", PROPERTY_HINT_FILE, "*.tres"), "");
 }
 
 void EditorPluginDatabaser::save_external_data()

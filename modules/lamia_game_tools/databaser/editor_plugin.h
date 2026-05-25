@@ -132,7 +132,6 @@ private:
     DatabaseEditorDock *editor_dock = nullptr;
 
 protected:
-    void enable_plugin();
     void _notification(int p_what);
     static void _bind_methods() {};
 
