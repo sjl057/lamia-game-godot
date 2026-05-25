@@ -1,0 +1,31 @@
+import os
+Import('env')
+
+sources = ["register_types.cpp"]
+
+def include_source(path):
+    ls = []
+    directory = os.fsencode(path)
+    for file in os.listdir(directory):
+        filename = os.fsdecode(file)
+        if filename.endswith(".cpp"):
+            ls.append(path + "/" + filename)
+    return ls
+
+sources.extend(include_source("general"))
+sources.extend(include_source("databaser"))
+sources.extend(include_source("eventer"))
+sources.extend(include_source("ai_graph"))
+
+module_env = env.Clone()
+module_env.Append(CCFLAGS=['-O2'])
+
+if ARGUMENTS.get("lamia_game_utils_shared", "no") == "yes":
+    module_env.Append(CCFLAGS=['-fPIC'])
+    module_env['LIBS'] = []
+    shared_lib = module_env.SharedLibrary(target='#bin/liblamiagameutils', source=sources)
+    env.Append(LIBPATH=['#bin'])
+    shared_lib_shim = shared_lib[0].name.rsplit(".", 1)[0]
+    env.Append(LIBS=[shared_lib_shim])
+else:
+    module_env.add_source_files(env.modules_sources, sources)

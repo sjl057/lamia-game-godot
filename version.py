@@ -1,9 +1,9 @@
-short_name = "godot"
-name = "Godot Engine"
+short_name = "lamia-game-godot"
+name = "Godot Engine LG"
 major = 4
 minor = 6
 patch = 3
 status = "stable"
-module_config = ""
+module_config = "lg"
 website = "https://godotengine.org"
 docs = "4.6"
