@@ -13,7 +13,7 @@
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
 #include "editor/file_system/editor_file_system.h"
-#include "modules/lamia_game_utils/general/defs.h"
+#include "../general/defs.h"
 #include "scene/main/node.h"
 #include "editor/editor_string_names.h"
 #include "core/string/print_string.h"
