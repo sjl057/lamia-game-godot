@@ -1,4 +1,5 @@
 #pragma once
+#include "core/variant/binder_common.h"
 #ifdef TOOLS_ENABLED
 
 #include "core/io/resource.h"
@@ -78,12 +79,14 @@ private:
     void _on_path_edit_text_submitted(String p_text);
     void _refresh_menu();
 
+    void _select_callback(const StringName &p_path, Ref<DatabaseResource> p_data);
+
 protected:
     static void _bind_methods();
 
 public:
-    void set_type(StringName p_type) { type = p_type; }
-    void set_path(StringName p_path);
+    void set_data_type(const StringName &p_type);
+    void set_path(const StringName &p_path);
     LineEdit *get_path_edit() const { return path_edit; };
 
     EditorDatabaseSelect();
@@ -93,22 +96,33 @@ class EditorPropertyDatabaseSelect : public EditorProperty
 {
     GDCLASS(EditorPropertyDatabaseSelect, EditorProperty)
 
+public:
+    enum DatabaseSelectMode
+    {
+        MODE_RET_ID,
+        MODE_RET_RESOURCE
+    };
+
 private:
+    DatabaseSelectMode mode = MODE_RET_ID;
     bool updating = false;
     StringName type;
     EditorDatabaseSelect *select = nullptr;
 
     void _on_path_changed(StringName p_new_path);
+    void _on_data_changed(Ref<DatabaseResource> p_new_data);
 
 protected:
     static void _bind_methods() {};
 
 public:
-    void set_type(const StringName p_type);
+    void set_select_mode(const DatabaseSelectMode &p_mode) { mode = p_mode; }
+    void set_data_type(const StringName &p_type);
     virtual void update_property() override;
 
     EditorPropertyDatabaseSelect();
 };
+VARIANT_ENUM_CAST(EditorPropertyDatabaseSelect::DatabaseSelectMode);
 
 class EditorInspectorPluginDatabaser : public EditorInspectorPlugin
 {
@@ -132,11 +146,12 @@ private:
     DatabaseEditorDock *editor_dock = nullptr;
 
 protected:
-    void _notification(int p_what);
     static void _bind_methods() {};
 
 public:
+    virtual String get_plugin_name() const override { return "Databaser"; }
     virtual void save_external_data() override;
+    EditorPluginDatabaser();
 };
 
 #endif // TOOLS_ENABLED

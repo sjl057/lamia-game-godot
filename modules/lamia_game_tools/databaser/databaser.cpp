@@ -3,13 +3,18 @@
 #include "core/error/error_macros.h"
 #include "core/io/resource_loader.h"
 #include "core/math/vector2i.h"
+#include "core/object/class_db.h"
 #include "core/object/object.h"
+#include "core/object/script_language.h"
 #include "core/string/print_string.h"
+#include "core/string/string_name.h"
 #include "core/variant/callable.h"
+#include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
 #include "database.h"
 #include "database_select_dialog.h"
 #include "editor/editor_interface.h"
+#include "modules/lamia_game_tools/general/defs.h"
 
 Databaser *Databaser::singleton = nullptr;
 
@@ -20,23 +25,20 @@ Databaser::Databaser()
     {
         WARN_PRINT_ONCE("No database set in project settings");
     }
-
 }
 
 Databaser::~Databaser()
 {
     singleton = nullptr;
-
 }
 
 void Databaser::_bind_methods()
 {
-    ClassDB::bind_method(D_METHOD("get_database"), &Databaser::get_database);
-    ClassDB::bind_static_method("Databaser", D_METHOD("get_database_path"), &Databaser::get_database_path);
-    ClassDB::bind_static_method("Databaser", D_METHOD("get_type_list"), &Databaser::get_type_list);
-    ClassDB::bind_static_method("Databaser", D_METHOD("get_type_count"), &Databaser::get_type_count);
-    ClassDB::bind_static_method("Databaser", D_METHOD("has_type", "type"), &Databaser::has_type);
-    ClassDB::bind_static_method("Databaser", D_METHOD("resource_path_to_id", "path"), &Databaser::resource_path_to_id);
+    BIND(D_METHOD("get_database"), &Databaser::get_database);
+    BIND_STA(D_METHOD("get_database_path"), &Databaser::get_database_path);
+    BIND_STA(D_METHOD("get_type_list"), &Databaser::get_type_list);
+    BIND_STA(D_METHOD("get_type_count"), &Databaser::get_type_count);
+    BIND_STA(D_METHOD("has_type", "type"), &Databaser::has_type);
 }
 
 Databaser *Databaser::get_singleton()
@@ -51,97 +53,60 @@ String Databaser::get_database_path()
 
 PackedStringArray Databaser::get_type_list()
 {
-    TypedArray<Dictionary> global_class_list = ProjectSettings::get_singleton()->get_global_class_list();
-    AHashMap<StringName, Dictionary> class_map;
-    for (int i = 0; i < global_class_list.size(); i++)
-    {
-        Dictionary class_dict = global_class_list[i];
-        class_map.insert(class_dict["class"], class_dict);
-    }
+    PackedStringArray ret;
+
+    LocalVector<StringName> global_classes;
+    ScriptServer::get_global_class_list(global_classes);
 
     StringName base_class = DatabaseResource::get_class_static();
-    PackedStringArray class_list;
-    for (int i = 0; i < global_class_list.size(); i++)
+    for (const StringName &E : global_classes)
     {
-        Dictionary this_class = global_class_list[i];
-        StringName base = this_class["base"];
-        while (class_map.has(base))
+        StringName native_base = ScriptServer::get_global_class_native_base(E);
+        if (native_base == base_class)
         {
-            base = class_map[base]["base"];
-        }
-
-        if (base == base_class)
-        {
-            class_list.push_back(this_class["class"]);
+            ret.append(E);
         }
     }
 
-    return class_list;
+    return ret;
 }
 
 TypedArray<Dictionary> Databaser::get_type_dict()
 {
-    // this doesn't work that well
-//     ERROR: FATAL: Index p_index = 1 is out of bounds (size() = 1).
-//    at: get (./core/templates/cowdata.h:193)
-
-    TypedArray<Dictionary> global_class_list = ProjectSettings::get_singleton()->get_global_class_list();
-    AHashMap<StringName, Dictionary> class_map;
-    for (int i = 0; i < global_class_list.size(); i++)
-    {
-        Dictionary class_dict = global_class_list[i];
-        class_map.insert(class_dict["class"], class_dict);
-    }
+    TypedArray<Dictionary> ret;
+    LocalVector<StringName> global_classes;
+    ScriptServer::get_global_class_list(global_classes);
 
     StringName base_class = DatabaseResource::get_class_static();
-    LocalVector<int> to_remove;
-    for (int i = 0; i < global_class_list.size(); i++)
+    for (const StringName &E : global_classes)
     {
-        Dictionary this_class = global_class_list[i];
-        StringName base = this_class["base"];
-        while (class_map.has(base))
+        StringName native_base = ScriptServer::get_global_class_native_base(E);
+        if (native_base == base_class)
         {
-            base = class_map[base]["base"];
-        }
-
-        if (base != base_class)
-        {
-            to_remove.push_back(i);
+            Dictionary dict;
+            dict.set("class", E);
+            dict.set("path", ScriptServer::get_global_class_path(E));
+            dict.set("language", ScriptServer::get_global_class_language(E));
+            dict.set("base", ScriptServer::get_global_class_base(E));
+            ret.append(dict);
         }
     }
 
-    for (const int i : to_remove)
-    {
-        global_class_list.remove_at(i);
-    }
-
-    return global_class_list;
+    return ret;
 }
 
 bool Databaser::has_type(const StringName p_type)
 {
-    TypedArray<Dictionary> global_class_list = ProjectSettings::get_singleton()->get_global_class_list();
-    AHashMap<StringName, Dictionary> class_map;
-    for (int i = 0; i < global_class_list.size(); i++)
-    {
-        Dictionary class_dict = global_class_list[i];
-        class_map.insert(class_dict["class"], class_dict);
-    }
+    LocalVector<StringName> global_classes;
+    ScriptServer::get_global_class_list(global_classes);
 
     StringName base_class = DatabaseResource::get_class_static();
-
-    for (int i = 0; i < global_class_list.size(); i++)
+    for (const StringName &E : global_classes)
     {
-        Dictionary this_class = global_class_list[i];
-        if ((StringName)this_class["class"] == p_type)
+        if (E == p_type)
         {
-            StringName base = this_class["base"];
-            while (class_map.has(base))
-            {
-                base = class_map[base]["base"];
-            }
-                
-            if (base == base_class)
+            StringName native_base = ScriptServer::get_global_class_native_base(E);
+            if (native_base == base_class)
             {
                 return true;
             }
@@ -153,45 +118,22 @@ bool Databaser::has_type(const StringName p_type)
 
 int Databaser::get_type_count()
 {
-    TypedArray<Dictionary> global_class_list = ProjectSettings::get_singleton()->get_global_class_list();
-    AHashMap<StringName, Dictionary> class_map;
-    for (int i = 0; i < global_class_list.size(); i++)
-    {
-        Dictionary class_dict = global_class_list[i];
-        class_map.insert(class_dict["class"], class_dict);
-    }
-    StringName base_class = DatabaseResource::get_class_static();
+    unsigned int count = 0;
 
-    int count = 0;
-    for (int i = 0; i < global_class_list.size(); i++)
+    LocalVector<StringName> global_classes;
+    ScriptServer::get_global_class_list(global_classes);
+
+    StringName base_class = DatabaseResource::get_class_static();
+    for (const StringName &E : global_classes)
     {
-        Dictionary this_class = global_class_list[i];
-        StringName base = this_class["base"];
-        while (class_map.has(base))
-        {
-            base = class_map[base]["base"];
-        }
-            
-        if (base == base_class)
+        StringName native_base = ScriptServer::get_global_class_native_base(E);
+        if (native_base == base_class)
         {
             count++;
         }
     }
 
     return count;
-}
-
-String Databaser::resource_path_to_id(String p_path)
-{
-    if (p_path.contains("::"))
-    {
-        String file_path = p_path.get_slice("::", 0);
-        return vformat("%s::%s", file_path.get_file().trim_suffix(file_path.get_extension().rstrip(".")), p_path.get_slice("::", 1));
-    }
-    else
-    {
-        return p_path.get_file().trim_suffix(p_path.get_extension()).rstrip(".");
-    }
 }
 
 Ref<Database> Databaser::get_database()
@@ -211,8 +153,9 @@ Ref<Database> Databaser::get_database()
 
 void Databaser::popup_database_id_select(const Callable &p_callback, const StringName &p_type, const StringName p_default_path)
 {
-#ifdef TOOLS_ENABLED
+#ifdef DEBUG_ENABLED
     ERR_FAIL_COND(not database->get_groups().has(p_type));
+    if (select_dialog and select_dialog->is_visible()) { return; }
 
     if (not select_dialog)
     {
@@ -232,7 +175,7 @@ void Databaser::popup_database_id_select(const Callable &p_callback, const Strin
     {
         
     }
-#endif // TOOLS_ENABLED
+#endif // DEBUG_ENABLED
 }
 
 void Databaser::_on_data_id_selected(const StringName &p_id, Ref<DatabaseResource> p_data, const Callable &p_callback)

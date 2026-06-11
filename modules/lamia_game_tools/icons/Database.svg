@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="10mm"
+   height="10mm"
+   viewBox="0 0 10 10"
+   version="1.1"
+   id="svg1"
+   xml:space="preserve"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   sodipodi:docname="database.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="true"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="24.370661"
+     inkscape:cx="17.5621"
+     inkscape:cy="21.603845"
+     inkscape:window-width="2648"
+     inkscape:window-height="1418"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" /><defs
+     id="defs1" /><path
+     id="path6"
+     style="fill:none;stroke:#e0e0e0;stroke-width:0.500065;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+     d="M 0.57533176,5.83567 2.5759267,5.0377075 4.5325747,5.8682399 M 2.5759267,5.0377075 V 8.6203964 M 4.5325747,7.7138675 V 5.8682399 L 2.5759267,6.7126034 0.57533176,5.83567 V 7.7138675 L 2.5759267,8.6095399 Z"
+     sodipodi:nodetypes="cccccccccccc" /><path
+     id="path6-1"
+     style="fill:none;stroke:#e0e0e0;stroke-width:0.500065;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+     d="M 5.4234785,5.83567 7.4240734,5.0377075 9.3807214,5.8682399 M 7.4240734,5.0377075 V 8.6203964 M 9.3807214,7.7138675 V 5.8682399 L 7.4240734,6.7126034 5.4234785,5.83567 v 1.8781975 l 2.0005949,0.8956724 z"
+     sodipodi:nodetypes="cccccccccccc" /><path
+     id="path6-9"
+     style="fill:none;stroke:#e0e0e0;stroke-width:0.500065;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+     d="M 2.9994051,2.2152736 5,1.4173111 6.9566481,2.2478435 M 5,1.4173111 V 5 M 6.9566481,4.0934711 V 2.2478435 L 5,3.092207 2.9994051,2.2152736 V 4.0934711 L 5,4.9891435 Z"
+     sodipodi:nodetypes="cccccccccccc" /></svg>

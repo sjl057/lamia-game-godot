@@ -2,16 +2,20 @@
 #include "core/error/error_macros.h"
 #include "core/input/input_enums.h"
 #include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
 #include "database.h"
 #include "databaser.h"
+#include "scene/gui/label.h"
+#include "scene/gui/line_edit.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_interface.h"
 #include "editor/docks/filesystem_dock.h"
 #endif
 
-#include "../general/filter_tree.h"
+#include "modules/lamia_game_tools/general/filter_tree.h"
 
 DatabaseTree::DatabaseTree()
 {
@@ -40,6 +44,13 @@ DatabaseTree::DatabaseTree()
     tree->connect("nothing_selected", callable_mp(this, &DatabaseTree::_on_nothing_selected));
     tree->set_drag_forwarding(callable_mp(this, &DatabaseTree::_get_drag_data_fw), callable_mp(this, &DatabaseTree::_can_drop_data_fw), callable_mp(this, &DatabaseTree::_drop_data_fw));
     add_child(tree);
+
+    id_editor = memnew(LineEdit);
+    id_editor->set_context_menu_enabled(false);
+    id_editor->connect("text_submitted", callable_mp(this, &DatabaseTree::_on_id_edit_submitted));
+    id_editor->connect("focus_exited", callable_mp(this, &DatabaseTree::_on_id_edit_focus_exited));
+    id_editor->hide();
+    add_child(id_editor);
 }
 
 void DatabaseTree::_bind_methods()
@@ -76,6 +87,8 @@ void DatabaseTree::popup_context_menu(TreeItem* p_on_item)
 
     menu->clear();
 
+    menu->add_item("Set ID", OPTION_SET_ID);
+    menu->add_item("Copy Path", OPTION_COPY_PATH);
     menu->add_item("Show in Filesystem", OPTION_SHOW_IN_FILESYSTEM);
     menu->add_item("Remove", OPTION_REMOVE);
 
@@ -158,19 +171,30 @@ Ref<DatabaseResource> DatabaseTree::_normalize_drop_data(const Variant &p_data) 
     if (p_data.get_type() == Variant::DICTIONARY)
     {
         Dictionary data = (Dictionary)p_data;
-        if (data.has("type") and data.has("files") and data["type"] == "files")
+        if (data.has("type"))
         {
-            PackedStringArray files = data["files"];
-            if (files.is_empty() or files.size() > 1) { return nullptr; }
-            if (ResourceLoader::exists(files[0], "DatabaseResource"))
+            if (data["type"] == "database_tree_item" and data.has("data"))
             {
-                Ref<Resource> res = ResourceLoader::load(files[0], "DatabaseResource");
-                if (res.is_valid() and Object::cast_to<DatabaseResource>(res.ptr()))
+                Ref<DatabaseResource> res = Object::cast_to<DatabaseResource>(data["data"]);
+                if (res.is_valid())
                 {
                     return res;
                 }
             }
-        }
+            else if (data["type"] == "files" and data.has("files"))
+            {
+                PackedStringArray files = data["files"];
+                if (files.is_empty() or files.size() > 1) { return nullptr; }
+                if (ResourceLoader::exists(files[0], "DatabaseResource"))
+                {
+                    Ref<Resource> res = ResourceLoader::load(files[0], "DatabaseResource");
+                    if (res.is_valid() and Object::cast_to<DatabaseResource>(res.ptr()))
+                    {
+                        return res;
+                    }
+                }
+            }
+        } 
     }
     return nullptr;
 }
@@ -179,7 +203,22 @@ Variant DatabaseTree::_get_drag_data_fw(const Vector2 &p_at_position) const
 {
     if (not is_edit_enabled()) { return Variant(); }
 
+    TreeItem *item = tree->get_item_at_position(p_at_position);
+    if (item)
+    {
+        Ref<DatabaseResource> data = Object::cast_to<DatabaseResource>(item->get_metadata(1));
+        
+        Label *preview = memnew(Label);
+        preview->set_text(data->get_data_name());
+        tree->set_drag_preview(preview);
 
+        Dictionary drag_data;
+        drag_data.set("type", "database_tree_item");
+        drag_data.set("path", item->get_metadata(0));
+        drag_data.set("data", data);
+
+        return drag_data;
+    }
 
     return Variant();
 }
@@ -227,11 +266,47 @@ void DatabaseTree::_drop_data_fw(const Vector2 &p_at_position, const Variant &p_
             normalized_data->reparent(child);
         }
         refresh();
-        Ref<Database> database = Databaser::get_singleton()->get_database();
-        if (database.is_valid())
+        root->recursive_save();
+    }
+}
+
+void DatabaseTree::_on_id_edit_submitted(const String &p_text)
+{
+    if (id_editor->is_visible())
+    {
+        TreeItem *selected = tree->get_selected();
+        if (selected)
         {
-            database->recursive_save();
+            Ref<DatabaseResource> data = Object::cast_to<DatabaseResource>(selected->get_metadata(1));
+            if (data.is_valid())
+            {
+                data->set_data_id(p_text);
+            }
+            refresh();
         }
+
+        id_editor->set_text(String());
+        id_editor->hide();
+    }
+}
+
+void DatabaseTree::_on_id_edit_focus_exited()
+{
+    if (id_editor->is_visible())
+    {
+        TreeItem *selected = tree->get_selected();
+        if (selected)
+        {
+            Ref<DatabaseResource> data = Object::cast_to<DatabaseResource>(selected->get_metadata(1));
+            if (data.is_valid())
+            {
+                data->set_data_id(id_editor->get_text());
+            }
+            refresh();
+        }
+
+        id_editor->set_text(String());
+        id_editor->hide();
     }
 }
 
@@ -241,11 +316,28 @@ void DatabaseTree::_on_menu_id_pressed(const int &p_id)
     switch (static_cast<MenuOptions>(p_id))
     {
         case OPTION_SET_ID:
+        {
+            TreeItem *selected = tree->get_selected();
+            Ref<DatabaseResource> data = Object::cast_to<DatabaseResource>(selected->get_metadata(1));
+            Rect2 rect = tree->get_item_rect(selected, 0);
+            id_editor->set_position(rect.position);
+            id_editor->set_size(rect.size);
+            id_editor->set_text(data->get_data_id());
+            id_editor->show();
+            id_editor->grab_focus();
             break;
+        }
         case OPTION_COPY_PATH:
-
+        {
+            StringName path = StringName(tree->get_selected()->get_metadata(0));
+            if (path)
+            {   
+                DisplayServer::get_singleton()->clipboard_set(path);
+            }
             break;
+        }
         case OPTION_SHOW_IN_FILESYSTEM:
+        {
             if (Engine::get_singleton()->is_editor_hint())
             {
                 Ref<DatabaseResource> child = Object::cast_to<DatabaseResource>(tree->get_selected()->get_metadata(1));
@@ -256,18 +348,18 @@ void DatabaseTree::_on_menu_id_pressed(const int &p_id)
                 }
             }
             break;
+        }
         case OPTION_REMOVE:
+        {
             Ref<DatabaseResource> child = Object::cast_to<DatabaseResource>(tree->get_selected()->get_metadata(1));
             if (child.is_valid())
             {
-                for (int i = 0; i < child->get_child_count(); i++)
-                {
-                    child->remove_child(child->get_child(i));
-                }
                 child->get_parent()->remove_child(child);
             }
+            // root->recursive_save();
             refresh();
             break;
+        }
     }
 }
 

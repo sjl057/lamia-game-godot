@@ -1,3 +1,6 @@
+#include "core/object/class_db.h"
+#include "core/templates/pair.h"
+#include "core/variant/variant.h"
 #ifdef TOOLS_ENABLED
 
 #include "editor_plugin.h"
@@ -54,6 +57,8 @@ void DatabaseEditorDock::popup_tab_menu(int p_tab_idx)
     ERR_FAIL_INDEX(p_tab_idx, tab_container->get_child_count());
     tab_menu->clear();
     tab_menu->add_item("Delete Orphaned Group", MenuAction::OPTION_DELETE_GROUP);
+    tab_menu->set_item_metadata(0, p_tab_idx);
+    tab_menu->set_item_disabled(0, Databaser::has_type((tab_container->get_tab_title(p_tab_idx))));
 
     tab_menu->popup(Rect2i(DisplayServer::get_singleton()->mouse_get_position(), Vector2i(30.0f, 50.0f)));
 }
@@ -98,31 +103,25 @@ void DatabaseEditorDock::_refresh_tabs()
             root.instantiate();
             root->set_path(vformat("%s::%s", database->get_path(), Resource::generate_scene_unique_id()), true);
             root->set_script(ResourceLoader::load(type["path"]));
-            Dictionary d = database->get_groups();
-            d.set(type["class"], root);
-            database->set_groups(d);
-        }
-        if (not database->get_group_order().has(type["class"]))
-        {
-            PackedStringArray order = database->get_group_order();
-            order.append(type["class"]);
-            database->set_group_order(order);
+            database->set_group(type["class"], root);
         }
     }
     ResourceSaver::save(database);
     
-    for (int i = 0; i < database->get_groups().size(); i++)
+    int i = 0;
+    for (const KeyValue<Variant, Variant> &kv : database->get_groups())
     {
-        Ref<DatabaseResource> root = database->get_groups()[database->get_group_order()[i]];
+        Ref<DatabaseResource> root = Object::cast_to<DatabaseResource>(kv.value);
 
         DatabaseTree *tab = memnew(DatabaseTree);
         tab->set_edit_enabled(true);
-        tab->set_name(database->get_group_order()[i]);
         tab->set_group(root);
         tab->connect("data_activated", callable_mp(this, &DatabaseEditorDock::_on_data_activated).bind(tab->get_name()));
         tab_container->add_child(tab);
         tabs.push_back(tab);
         filter_edit->connect("text_changed", callable_mp(tab, &DatabaseTree::set_filter));
+        tab_container->set_tab_title(i, kv.key);
+        i++;
     }
 
     if (current_tab >= 0)
@@ -138,8 +137,9 @@ void DatabaseEditorDock::_refresh_tabs()
 void DatabaseEditorDock::_refresh_current_tab()
 {
     if (not is_visible()) { return; } 
-    if (current_tab < 0) { return; }
-    DatabaseTree *tree = Object::cast_to<DatabaseTree>(tab_container->get_child(current_tab));
+    if (tab_container->get_current_tab() < 0) { return; }
+    
+    DatabaseTree *tree = Object::cast_to<DatabaseTree>(tab_container->get_current_tab_control());
     if (tree)
     {
         tree->refresh();
@@ -166,17 +166,12 @@ void DatabaseEditorDock::_on_data_activated(StringName p_path, Ref<DatabaseResou
 
 void DatabaseEditorDock::_on_tab_clicked(int p_tab)
 {
-    current_tab = p_tab;
-    
+    current_tab = p_tab; 
 }
 
 void DatabaseEditorDock::_on_tab_rmb_clicked(int p_tab)
 {
-    Ref<Database> database = Databaser::get_singleton()->get_database();
-    if (not Databaser::get_singleton()->has_type((tab_container->get_tab_control(p_tab)->get_name())))
-    {
-        popup_tab_menu(p_tab);
-    }
+    popup_tab_menu(p_tab);
 }
 
 void DatabaseEditorDock::_on_active_tab_rearranged(int p_idx_to)
@@ -200,14 +195,12 @@ void DatabaseEditorDock::_on_menu_id_pressed(int p_id)
     switch (static_cast<MenuAction>(p_id))
     {
         case OPTION_DELETE_GROUP:
+            int tab_idx = tab_menu->get_item_metadata(tab_menu->get_item_index(p_id));
             Ref<Database> database = Databaser::get_singleton()->get_database();
 
-            database->get_groups().erase(tab_container->get_current_tab_control()->get_name());
-            PackedStringArray order = database->get_group_order();
-            order.erase(tab_container->get_current_tab_control()->get_name());
-            database->set_group_order(order);
+            database->remove_group(tab_container->get_tab_title(tab_idx));
             database->recursive_save();
-            tab_container->get_current_tab_control()->queue_free();
+            _refresh_tabs();
             break;
     }
 }
@@ -238,11 +231,11 @@ EditorDatabaseSelect::EditorDatabaseSelect()
     Ref<Theme> theme = EditorNode::get_singleton()->get_editor_theme();
     if (theme.is_valid())
     {
-        menu_button->set_button_icon(theme->get_icon(SNAME("GuiTabMenuHl"), EditorStringName(EditorIcons)));
-        menu_button->get_popup()->set_item_icon(0, theme->get_icon(SNAME("Clear"), EditorStringName(EditorIcons)));
-        menu_button->get_popup()->set_item_icon(1, theme->get_icon(SNAME("ActionCopy"), EditorStringName(EditorIcons)));
-        menu_button->get_popup()->set_item_icon(2, theme->get_icon(SNAME("Edit"), EditorStringName(EditorIcons)));
-        menu_button->get_popup()->set_item_icon(3, theme->get_icon(SNAME("File"), EditorStringName(EditorIcons)));
+        menu_button->set_button_icon(theme->get_icon("GuiTabMenuHl", EditorStringName(EditorIcons)));
+        menu_button->get_popup()->set_item_icon(0, theme->get_icon("Clear", EditorStringName(EditorIcons)));
+        menu_button->get_popup()->set_item_icon(1, theme->get_icon("ActionCopy", EditorStringName(EditorIcons)));
+        menu_button->get_popup()->set_item_icon(2, theme->get_icon("Edit", EditorStringName(EditorIcons)));
+        menu_button->get_popup()->set_item_icon(3, theme->get_icon("File", EditorStringName(EditorIcons)));
     }
 
     path_edit = memnew(LineEdit);
@@ -253,7 +246,16 @@ EditorDatabaseSelect::EditorDatabaseSelect()
     add_child(path_edit);
 }
 
-void EditorDatabaseSelect::set_path(StringName p_path)
+void EditorDatabaseSelect::set_data_type(const StringName &p_type)
+{   
+    if (not p_type.is_empty())
+    {
+        ERR_FAIL_COND_MSG(not Databaser::has_type(p_type), vformat("Database doesn't have type: %s", p_type));
+    }
+    type = p_type;
+}
+
+void EditorDatabaseSelect::set_path(const StringName &p_path)
 {
     path = p_path;
     if (not path.is_empty())
@@ -303,7 +305,7 @@ void EditorDatabaseSelect::_on_menu_id_pressed(int p_id)
 void EditorDatabaseSelect::_on_select_button_pressed()
 {
     ERR_FAIL_COND_MSG(not Databaser::get_singleton()->get_database().is_valid(), "No Database specified");
-    Databaser::get_singleton()->popup_database_id_select(callable_mp(this, &EditorDatabaseSelect::set_path).unbind(1), type, "");
+    Databaser::get_singleton()->popup_database_id_select(callable_mp(this, &EditorDatabaseSelect::_select_callback), type, "");
 }
 
 void EditorDatabaseSelect::_on_path_edit_text_focus_exited()
@@ -327,6 +329,11 @@ void EditorDatabaseSelect::_refresh_menu()
     menu_button->get_popup()->set_item_disabled(ACTION_OPEN_RESOURCE, path.is_empty());
 }
 
+void EditorDatabaseSelect::_select_callback(const StringName &p_path, Ref<DatabaseResource> p_data)
+{
+    set_path(p_path);
+}
+
 void EditorDatabaseSelect::_bind_methods()
 {
     ADD_SIGNAL(MethodInfo("path_changed"));
@@ -336,16 +343,24 @@ void EditorDatabaseSelect::_bind_methods()
 EditorPropertyDatabaseSelect::EditorPropertyDatabaseSelect()
 {
     select = memnew(EditorDatabaseSelect);
-    select->set_type(type);
+    select->set_data_type(type);
     select->connect("path_changed", callable_mp(this, &EditorPropertyDatabaseSelect::_on_path_changed));
     add_child(select);
     add_focusable(select->get_path_edit());
 }
 
-void EditorPropertyDatabaseSelect::set_type(const StringName p_type)
+void EditorPropertyDatabaseSelect::set_data_type(const StringName &p_type)
 {
-    type = p_type;
-    select->set_type(type);
+    if (not p_type.is_empty())
+    {
+        ERR_FAIL_COND_MSG(not Databaser::has_type(p_type), vformat("Database doesn't have type: %s", p_type));
+        type = p_type;
+        select->set_data_type(type);
+    }
+    else 
+    {
+        select->set_data_type(p_type);
+    }
 }
 
 void EditorPropertyDatabaseSelect::update_property()
@@ -357,9 +372,16 @@ void EditorPropertyDatabaseSelect::update_property()
 
 void EditorPropertyDatabaseSelect::_on_path_changed(StringName p_new_path)
 {
-    if (updating) { return; }
+    if (updating or mode != MODE_RET_ID) { return; }
     emit_changed(get_edited_property(), p_new_path);
 }
+
+void EditorPropertyDatabaseSelect::_on_data_changed(Ref<DatabaseResource> p_new_data)
+{
+    if (updating or mode != MODE_RET_RESOURCE) { return; }
+    emit_changed(get_edited_property(), p_new_data);
+}
+
 
 
 bool EditorInspectorPluginDatabaser::parse_property(Object *p_object, Variant::Type p_type, const String &p_name, PropertyHint p_hint_type, const String &p_hint_string, BitField<PropertyUsageFlags> p_usage_flags, bool p_wide)
@@ -370,41 +392,14 @@ bool EditorInspectorPluginDatabaser::parse_property(Object *p_object, Variant::T
             if ((p_type == Variant::STRING_NAME or p_type == Variant::STRING) and Databaser::has_type(p_hint_string))
             {
                 EditorPropertyDatabaseSelect *editor = memnew(EditorPropertyDatabaseSelect);
-                editor->set_type(p_hint_string);
+                editor->set_data_type(p_hint_string);
+                editor->set_select_mode(EditorPropertyDatabaseSelect::MODE_RET_ID);
                 add_property_editor(p_name, editor);
-                return true;
-            }
-            return false;
-        case LGT_PROPERTY_HINT_DATABASE_SELECT:
-            if (p_type == Variant::OBJECT and Databaser::has_type(p_hint_string))
-            {
-                
                 return true;
             }
             return false;
         default:
             return false;
-    }
-}
-
-void EditorPluginDatabaser::_notification(int p_what)
-{
-    switch (p_what)
-    {   
-        case NOTIFICATION_ENTER_TREE:
-            GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "databaser/config/database", PROPERTY_HINT_FILE, "*.tres"), "");
-            inspector_plugin = memnew(EditorInspectorPluginDatabaser);
-            add_inspector_plugin(inspector_plugin);
-
-            editor_dock = memnew(DatabaseEditorDock);
-            add_dock(editor_dock);
-            break;
-
-        case NOTIFICATION_EXIT_TREE:
-            remove_inspector_plugin(inspector_plugin);
-            remove_dock(editor_dock);
-            editor_dock->queue_free();
-            break;
     }
 }
 
@@ -415,6 +410,16 @@ void EditorPluginDatabaser::save_external_data()
     {
         database->recursive_save();
     }
+}
+
+EditorPluginDatabaser::EditorPluginDatabaser()
+{
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "databaser/config/database", PROPERTY_HINT_FILE, "*.tres"), "");
+    inspector_plugin = memnew(EditorInspectorPluginDatabaser);
+    add_inspector_plugin(inspector_plugin);
+
+    editor_dock = memnew(DatabaseEditorDock);
+    add_dock(editor_dock);
 }
 
 #endif // TOOLS_ENABLED

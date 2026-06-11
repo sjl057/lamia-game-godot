@@ -1,8 +1,9 @@
 #include "filter_tree.h"
+#include "modules/lamia_game_tools/general/defs.h"
 
 void FilterTree::_bind_methods()
 {
-    ClassDB::bind_method(D_METHOD("set_filter", "filter"), &FilterTree::set_filter, DEFVAL(String()));
+    BIND_D(D_METHOD("set_filter", "filter"), &FilterTree::set_filter, DEFVAL(String()));
 }
 
 void FilterTree::set_filter(String p_filter)
@@ -22,11 +23,13 @@ bool FilterTree::_update_filter(String p_filter, TreeItem *p_parent)
     if (not p_parent) { p_parent = get_root(); };
     if (not p_parent) { return false; };
 
+    bool is_root = p_parent == get_root();
+
     PackedStringArray terms = p_filter.to_lower().split(" ", false);
     bool keep = item_matches_terms(p_parent, terms);
     bool selectable = keep;
 
-    if (true)
+    if (keep)
     {
         TreeItem *next = get_root()->get_first_child();
         while (next)
@@ -48,15 +51,29 @@ bool FilterTree::_update_filter(String p_filter, TreeItem *p_parent)
         keep_for_children = _update_filter(p_filter, next_child) or keep_for_children;
         next_child = next_child->get_next();
     }
-    p_parent->set_visible(keep_for_children or selectable);
+
+    if (not is_root)
+    {
+        p_parent->set_visible(keep_for_children or selectable);
+    }
 
     if (selectable)
     {
-        p_parent->clear_custom_color(0);
-        if (p_parent->get_metadata(0))
+        if (p_parent->has_meta(SNAME("was_selectable")))
         {
-            p_parent->set_selectable(0, true);
+            p_parent->set_selectable(0, p_parent->get_meta(SNAME("was_selectable")));
+            p_parent->remove_meta(SNAME("was_selectable"));
         }
+        if (p_parent->has_meta(SNAME("original_color")))
+        {
+            p_parent->set_custom_color(0, p_parent->get_meta(SNAME("original_color")));
+            p_parent->remove_meta(SNAME("original_color"));
+        }
+        // p_parent->clear_custom_color(0);
+        // if (p_parent->get_metadata(0))
+        // {
+        //     p_parent->set_selectable(0, true);
+        // }
     }
     else if (keep_for_children)
     {
@@ -89,14 +106,26 @@ bool FilterTree::_update_filter(String p_filter, TreeItem *p_parent)
                     {
                         child->select(0);
                     }
+
+                    child->set_meta(SNAME("original_parent"), p_parent);
                 }
                 return false;
             }
         }
         else
         {
+            p_parent->set_meta(SNAME("was_selectable"), p_parent->is_selectable(0));
+            p_parent->set_meta(SNAME("original_color"), p_parent->get_custom_color(0));
             p_parent->set_custom_color(0, Color(0.6627451, 0.6627451, 0.6627451, 1));
             p_parent->set_selectable(0, false);
+        }
+    }
+    if (is_root)
+    {
+        set_hide_root(not selectable);
+        if (is_root_hidden())
+        {
+            p_parent->set_collapsed(false);
         }
     }
 

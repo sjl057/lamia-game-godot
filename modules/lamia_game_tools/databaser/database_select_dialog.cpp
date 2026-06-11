@@ -3,6 +3,7 @@
 #include "core/object/object.h"
 #include "core/variant/variant.h"
 #include "database_tree.h"
+#include "modules/lamia_game_tools/general/defs.h"
 
 DatabaseSelectDialog::DatabaseSelectDialog()
 {
@@ -26,7 +27,7 @@ DatabaseSelectDialog::DatabaseSelectDialog()
 
 void DatabaseSelectDialog::_bind_methods()
 {
-    ClassDB::bind_method(D_METHOD("popup_database_group_select", "group", "default_path", "title"), &DatabaseSelectDialog::popup_database_group_select);
+    BIND(D_METHOD("popup_database_group_select", "group", "default_path", "title"), &DatabaseSelectDialog::popup_database_group_select);
 
     ADD_SIGNAL(MethodInfo("selected", PropertyInfo(Variant::STRING_NAME, "path"), PropertyInfo(Variant::OBJECT, "data", PROPERTY_HINT_RESOURCE_TYPE, "DatabaseResource")));
 }
@@ -53,14 +54,14 @@ void DatabaseSelectDialog::_on_selected(const StringName &p_path, Ref<DatabaseRe
     emit_signal(SNAME("selected"), p_path, p_data);
     filter_edit->clear();
     tree->clear();
-    hide();
+    callable_mp(static_cast<Window*>(this), &Window::hide).call_deferred();
 }
 
 void DatabaseSelectDialog::_on_cancelled()
 {
     filter_edit->clear();
     tree->clear();
-    hide();
+    callable_mp(static_cast<Window*>(this), &Window::hide).call_deferred();
 }
 
 void DatabaseSelectDialog::_on_ok_pressed()

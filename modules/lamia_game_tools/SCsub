@@ -16,6 +16,8 @@ sources.extend(include_source("general"))
 sources.extend(include_source("databaser"))
 sources.extend(include_source("eventer"))
 sources.extend(include_source("ai_graph"))
+sources.extend(include_source("console"))
+sources.extend(include_source("texter"))
 
 module_env = env.Clone()
 module_env.Append(CCFLAGS=['-O2'])

@@ -1,5 +1,4 @@
-#ifndef __DATABASER_H__
-#define __DATABASER_H__
+#pragma once
 
 #include "core/object/object.h"
 #include "core/object/ref_counted.h"
@@ -33,7 +32,6 @@ public:
     static TypedArray<Dictionary> get_type_dict();
     static int get_type_count();
     static bool has_type(const StringName p_type);
-    static String resource_path_to_id(String p_path);
     Ref<Database> get_database();
 
     void popup_database_id_select(const Callable &p_callback, const StringName &p_type, const StringName p_default_path);
@@ -41,5 +39,3 @@ public:
     Databaser();
     ~Databaser();
 };
-
-#endif // __DATABASER_H__

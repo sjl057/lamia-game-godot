@@ -1,5 +1,4 @@
-#ifndef __FILTER_TREE_H__
-#define __FILTER_TREE_H__
+#pragma once
 
 #include "core/object/object.h"
 #include "core/string/ustring.h"
@@ -21,5 +20,3 @@ public:
     void set_filter(String p_filter);
 
 };
-
-#endif // __FILTER_TREE_H__

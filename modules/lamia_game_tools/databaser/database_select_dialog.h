@@ -1,5 +1,4 @@
-#ifndef __DATABASE_SELECT_DIALOG_H__
-#define __DATABASE_SELECT_DIALOG_H__
+#pragma once
 
 #include "core/object/object.h"
 #include "database.h"
@@ -28,5 +27,3 @@ public:
 
     DatabaseSelectDialog();
 };
-
-#endif // __DATABASE_SELECT_DIALOG_H__

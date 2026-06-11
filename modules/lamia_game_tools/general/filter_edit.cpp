@@ -9,9 +9,15 @@ FilterEdit::FilterEdit()
     set_placeholder("Filter...");
     set_emoji_menu_enabled(false);
     set_keep_editing_on_text_submit(true);
+#ifdef TOOLS_ENABLED
     Ref<Theme> theme = EditorNode::get_singleton()->get_editor_theme();
     if (theme.is_valid())
     {
-        set_right_icon(theme->get_icon(SNAME("Search"), EditorStringName(EditorIcons)));
+        set_right_icon(theme->get_icon("Search", EditorStringName(EditorIcons)));
     }
+#endif
+
+#ifdef DEBUG_ENABLED
+
+#endif
 }

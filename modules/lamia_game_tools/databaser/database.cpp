@@ -1,28 +1,31 @@
 #include "database.h"
+#include "core/error/error_macros.h"
 #include "core/io/resource_saver.h"
+#include "core/object/class_db.h"
+#include "core/object/object.h"
 #include "core/object/script_language.h"
-
-// #ifdef TOOLS_ENABLED
-// #include "godot_cpp/classes/editor_interface.hpp"
-// #include "godot_cpp/classes/editor_file_system.hpp"
-// #endif
+#include "core/templates/pair.h"
+#include "core/variant/dictionary.h"
+#include "core/variant/typed_array.h"
+#include "core/variant/variant.h"
+#include "modules/lamia_game_tools/general/defs.h"
 
 void DatabaseResource::_bind_methods()
 {
-    ClassDB::bind_method(D_METHOD("set_data_id", "id"), &DatabaseResource::set_data_id);
-    ClassDB::bind_method(D_METHOD("get_data_id"), &DatabaseResource::get_data_id);
-    ClassDB::bind_method(D_METHOD("set_data_name", "name"), &DatabaseResource::set_data_name);
-    ClassDB::bind_method(D_METHOD("get_data_name"), &DatabaseResource::get_data_name);
-    // ClassDB::bind_method(D_METHOD("get_database_path"), &DatabaseResource::get_database_path);
-    // ClassDB::bind_method(D_METHOD("reparent", "parent"), &DatabaseResource::reparent);
-    ClassDB::bind_method(D_METHOD("set_parent", "parent"), &DatabaseResource::set_parent);
-    ClassDB::bind_method(D_METHOD("get_parent"), &DatabaseResource::get_parent);
-    ClassDB::bind_method(D_METHOD("set_children"), &DatabaseResource::set_children);
-    ClassDB::bind_method(D_METHOD("get_children"), &DatabaseResource::get_children);
-    ClassDB::bind_method(D_METHOD("instantiate"), &DatabaseResource::instantiate);
+    BIND(D_METHOD("set_data_id", "id"), &DatabaseResource::set_data_id);
+    BIND(D_METHOD("get_data_id"), &DatabaseResource::get_data_id);
+    BIND(D_METHOD("set_data_name", "name"), &DatabaseResource::set_data_name);
+    BIND(D_METHOD("get_data_name"), &DatabaseResource::get_data_name);
+    BIND(D_METHOD("get_database_path"), &DatabaseResource::get_database_path);
+    // BIND(D_METHOD("reparent", "parent"), &DatabaseResource::reparent);
+    BIND(D_METHOD("set_parent", "parent"), &DatabaseResource::set_parent);
+    BIND(D_METHOD("get_parent"), &DatabaseResource::get_parent);
+    BIND(D_METHOD("set_children"), &DatabaseResource::set_children);
+    BIND(D_METHOD("get_children"), &DatabaseResource::get_children);
+    BIND(D_METHOD("instantiate"), &DatabaseResource::instantiate);
     GDVIRTUAL_BIND(_instantiate);
 
-    ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "id", PROPERTY_HINT_NONE, ""), "set_data_id", "get_data_id");
+    ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "id", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_INTERNAL | PROPERTY_USAGE_NO_EDITOR), "set_data_id", "get_data_id");
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "name"), "set_data_name", "get_data_name");
     ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "children", PROPERTY_HINT_TYPE_STRING, vformat("%d:DatabaseResource", PROPERTY_HINT_RESOURCE_TYPE), PROPERTY_USAGE_INTERNAL | PROPERTY_USAGE_NO_EDITOR), "set_children", "get_children");
 }
@@ -36,10 +39,10 @@ void DatabaseResource::_ensure_child_ids_are_unique()
         StringName new_id = child->get_data_id();
         if (new_id.is_empty())
         {
-            String path = child->get_path();
-            if (not path.is_empty() and not path.contains("::"))
+            String cpath = child->get_path();
+            if (not cpath.is_empty() and not cpath.contains("::"))
             {
-                new_id = path.get_file().trim_suffix(path.get_extension()).rstrip(".");
+                new_id = cpath.get_file().trim_suffix(cpath.get_extension()).rstrip(".");
             }
             else
             {
@@ -64,16 +67,37 @@ void DatabaseResource::_ensure_child_ids_are_unique()
     }
 }
 
+void DatabaseResource::recursive_save()
+{
+    if (get_path().is_empty()) { return; }
+
+    ResourceSaver::save(this);
+
+    TypedArray<Ref<DatabaseResource>> all_data;
+    get_all_data(this, all_data);
+
+    if (not all_data.is_empty())
+    {
+        for (int i = 0; i < all_data.size(); i++)
+        {
+            ResourceSaver::save(all_data[i]);
+        }
+    }
+}
+
 void DatabaseResource::get_all_data(Ref<DatabaseResource> p_from, TypedArray<Ref<DatabaseResource>> &r_ret) const
 {
     if (not p_from.is_valid())
     {
         p_from = this;
     }
-    r_ret.append_array(get_children());
-    for (int i = 0; i < get_child_count(); i++)
+    if (p_from->get_child_count() > 0)
     {
-        get_all_data(get_child(i), r_ret);
+        r_ret.append_array(p_from->get_children());
+        for (int i = 0; i < p_from->get_child_count(); i++)
+        {
+            get_all_data(p_from->get_child(i), r_ret);
+        }
     }
 }
 
@@ -94,7 +118,7 @@ bool DatabaseResource::can_add_child(Ref<DatabaseResource> p_child) const
     {
         return false;
     }
-    return p_child.is_valid() and p_child.ptr() != this and not children.has(p_child) and (this_script->get_global_name() == child_script->get_global_name());
+    return p_child.is_valid() and p_child->get_parent() != this and p_child.ptr() != this and not children.has(p_child) and (this_script->get_global_name() == child_script->get_global_name());
 }
 
 void DatabaseResource::add_child(Ref<DatabaseResource> p_child)
@@ -106,6 +130,8 @@ void DatabaseResource::add_child(Ref<DatabaseResource> p_child)
     p_child->set_parent(this);
     p_child->connect("changed", callable_mp(Object::cast_to<Resource>(this), &Resource::emit_changed));
     p_child->connect("changed", callable_mp(this, &DatabaseResource::_ensure_child_ids_are_unique));
+    p_child->set_database_path(vformat("%s/%s", p_child->path, path));
+    // ResourceSaver::save(p_child);
     children.append(p_child);
     _ensure_child_ids_are_unique();
 }
@@ -117,6 +143,14 @@ void DatabaseResource::remove_child(Ref<DatabaseResource> p_child)
     p_child->disconnect("changed", callable_mp(Object::cast_to<Resource>(this), &Resource::emit_changed));
     p_child->disconnect("changed", callable_mp(this, &DatabaseResource::_ensure_child_ids_are_unique));
     p_child->set_parent(nullptr);
+    if (p_child->get_child_count() > 0)
+    {
+        for (int i = 0; i < p_child->get_child_count(); i++)
+        {
+            p_child->remove_child(p_child->get_child(i));
+        }
+    }
+    p_child->set_database_path(StringName());
     ResourceSaver::save(p_child);
     children.erase(p_child);
 }
@@ -150,13 +184,13 @@ Ref<DatabaseResource> DatabaseResource::get_child(int p_idx) const
 {
     if (p_idx < 0)
     {
-        p_idx += children.size();
+        p_idx = children.size() - 1;
     }
     ERR_FAIL_INDEX_V(p_idx, (int)children.size(), nullptr);
     return children[p_idx];
 }
 
-Ref<DatabaseResource> DatabaseResource::get_child_with_id(StringName p_id) const
+Ref<DatabaseResource> DatabaseResource::get_child_with_id(const StringName &p_id) const
 {
     for (int i = 0; i < children.size(); i++)
     {
@@ -174,7 +208,7 @@ bool DatabaseResource::has_child(Ref<DatabaseResource> p_child) const
     return children.has(p_child);
 }
 
-bool DatabaseResource::has_child_with_id(StringName p_id) const
+bool DatabaseResource::has_child_with_id(const StringName &p_id) const
 {
     for (int i = 0; i < children.size(); i++)
     {
@@ -206,8 +240,27 @@ Object *DatabaseResource::instantiate()
 
 
 
+void Database::set_group(const StringName &p_name, Ref<DatabaseResource> p_group)
+{
+    groups.insert(p_name, p_group);
+    if (not group_order.has(p_name))
+    {
+        group_order.ordered_insert(p_name);
+    }
+}
+
+void Database::remove_group(const StringName &p_name)
+{
+    groups.erase(p_name);
+    if (group_order.has(p_name))
+    {
+        group_order.erase(p_name);
+    }
+}
+
 bool Database::has_data(StringName p_group, StringName p_path)
 {
+    ERR_FAIL_COND_V_MSG(p_path.is_empty(), false, "No path specified");
     ERR_FAIL_COND_V(not has_group(p_group), false);
 
     Vector<String> split = ((String)p_path).split("/", false);
@@ -221,10 +274,6 @@ bool Database::has_data(StringName p_group, StringName p_path)
             if (i < split.size() - 1) { continue; }
             else { return true; }
         }
-        else
-        {
-            return false;
-        }
     }
 
     return false;
@@ -232,9 +281,12 @@ bool Database::has_data(StringName p_group, StringName p_path)
 
 Ref<DatabaseResource> Database::get_data(StringName p_group, StringName p_path)
 {
+    ERR_FAIL_COND_V_MSG(p_path.is_empty(), nullptr, "No path specified");
     ERR_FAIL_COND_V(not has_group(p_group), nullptr);
 
     Vector<String> split = ((String)p_path).split("/", false);
+
+    if (split.is_empty()) { return nullptr; }
 
     Ref<DatabaseResource> current = groups[p_group];
     for (int i = 0; i < split.size(); i++)
@@ -245,12 +297,9 @@ Ref<DatabaseResource> Database::get_data(StringName p_group, StringName p_path)
             if (i < split.size() - 1) { continue; }
             else { return current; }
         }
-        else
-        {
-            return nullptr;
-        }
     }
 
+    ERR_PRINT(vformat("Couldn't find data %s in group %s", p_path, p_group));
     return nullptr;
 }
 
@@ -272,6 +321,50 @@ TypedArray<Ref<DatabaseResource>> Database::get_all_data(Ref<DatabaseResource> p
     return array;
 }
 
+void Database::set_groups(const Dictionary &p_groups)
+{
+    groups.clear();
+    for (const KeyValue<Variant, Variant> &kv : p_groups)
+    {
+        Ref<DatabaseResource> value = Object::cast_to<DatabaseResource>(kv.value);
+        if (Variant::can_convert(kv.key.get_type(), Variant::STRING_NAME) and value.is_valid())
+        {
+            groups.insert(kv.key, kv.value);
+        }
+    }
+}
+
+Dictionary Database::get_groups() const
+{
+    Dictionary ret;
+    for (const KeyValue<StringName, Ref<DatabaseResource>> &kv : groups)
+    {
+        ret.set(kv.key, kv.value);
+    }
+    return ret;
+}
+
+void Database::set_group_order(const PackedStringArray &p_order)
+{
+    group_order.clear();
+    for (int i = 0; i < p_order.size(); i++)
+    {
+        group_order.ordered_insert(p_order[i]);
+    }
+}
+
+PackedStringArray Database::get_group_order() const
+{
+    PackedStringArray ret;
+    ret.resize(group_order.size());
+    for (unsigned int i = 0; i < group_order.size(); i++)
+    {
+        ret.set(i, group_order[i]);
+    }
+    return ret;
+}
+
+
 
 void Database::recursive_save()
 {
@@ -279,26 +372,27 @@ void Database::recursive_save()
 
     ResourceSaver::save(this);
 
-    for (int i = 0; i < get_groups().size(); i++)
+    for (const KeyValue<Variant, Variant> &kv : get_groups())
     {
-        Ref<DatabaseResource> group = get_groups()[get_groups().keys()[i]]; 
-
-        TypedArray<Ref<DatabaseResource>> all_data = get_all_data(group);
-        for (int j = 0; j < all_data.size(); j++)
+        Ref<DatabaseResource> group = Object::cast_to<DatabaseResource>(kv.value);
+        if (group.is_valid())
         {
-            ResourceSaver::save(all_data[j]);
+            group->recursive_save();
         }
     }
-
 }
 
 void Database::_bind_methods()
 {
-    ClassDB::bind_method(D_METHOD("_set_groups", "groups"), &Database::set_groups);
-    ClassDB::bind_method(D_METHOD("_get_groups"), &Database::get_groups);
-    ClassDB::bind_method(D_METHOD("_set_group_order", "order"), &Database::set_group_order);
-    ClassDB::bind_method(D_METHOD("_get_group_order"), &Database::get_group_order);
+    BIND(D_METHOD("has_data", "group", "path"), &Database::has_data);
+    BIND(D_METHOD("get_data", "group", "path"), &Database::get_data);
+
+    BIND(D_METHOD("_set_groups", "groups"), &Database::set_groups);
+    BIND(D_METHOD("_get_groups"), &Database::get_groups);
+    BIND(D_METHOD("_set_group_order", "order"), &Database::set_group_order);
+    BIND(D_METHOD("_get_group_order"), &Database::get_group_order);
 
     ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "groups", PROPERTY_HINT_TYPE_STRING, vformat("%d:;%d:DatabaseGroup", Variant::STRING_NAME, PROPERTY_HINT_RESOURCE_TYPE), PROPERTY_USAGE_INTERNAL | PROPERTY_USAGE_NO_EDITOR), "_set_groups", "_get_groups");
     ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "group_order", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_INTERNAL | PROPERTY_USAGE_NO_EDITOR), "_set_group_order", "_get_group_order");
 }
+

@@ -26,6 +26,9 @@ private:
 
     Ref<DatabaseResource> _normalize_drop_data(const Variant &p_data) const;
     void _add_from_dbr(Ref<DatabaseResource> p_from, StringName path, TreeItem* p_parent);
+
+    void _on_id_edit_submitted(const String &p_text);
+    void _on_id_edit_focus_exited();
     void _on_menu_id_pressed(const int &p_id);
     void _on_item_selected();
     void _on_item_activated();
