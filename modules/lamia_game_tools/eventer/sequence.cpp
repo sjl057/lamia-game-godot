@@ -245,52 +245,6 @@ void EVBase::_bind_methods()
     ADD_PROPERTY(PropertyInfo(Variant::INT, "edit_flags", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_INTERNAL | PROPERTY_USAGE_NO_EDITOR), "_set_edit_flags", "_get_edit_flags");
 }
 
-// void EVBase::_unlink()
-// {
-//     auto prev_child = prev;
-//     if (prev_child.is_valid())
-//     {
-//         prev_child->next = next;
-//     }
-//     if (next.is_valid())
-//     {
-//         next->prev = prev_child;
-//     }
-//     if (parent.is_valid())
-//     {
-//         parent->children.erase(this);
-//         if (parent->first_child == this)
-//         {
-//             parent->first_child = next;
-//         }
-//         if (parent->last_child == this)
-//         {
-//             parent->last_child = prev;
-//         }
-//     }
-// }
-
-// void EVBase::_change_sequence(Ref<EventerSequence> p_sequence)
-// {
-//     if (p_sequence == sequence) { return; }
-
-//     if (sequence->get_root() == Ref<EVCommand>(this))
-//     {
-//         sequence->set_root(nullptr);
-//     }
-
-//     Ref<EVBase> c = first_child;
-//     while (c.is_valid())
-//     {
-//         c->_change_sequence(p_sequence);
-//         c = c->next;
-//     }
-
-
-
-//     sequence = p_sequence;
-// }
-
 void EVBase::_on_children_reordered()
 {
     for (int i = 0; i < children.size(); i++)
@@ -462,30 +416,6 @@ Ref<EVBase> EVBase::get_next_in_tree_enabled() const
     }
     return next_item;
 }
-
-/* int EVBase::get_index() const
-{
-    int idx = 0;
-    Ref<EVBase> current = Ref<EVBase>(this);
-    while (current.is_valid())
-    {
-        current = current->prev;
-        idx++;
-    }
-    return idx - 1;
-} */
-
-/* int EVBase::get_child_index() const
-{
-    int idx = 0;
-    Ref<EVBase> current = Ref<EVBase>(this);
-    while (current.is_valid() and current->parent == parent)
-    {
-        current = current->prev;
-        idx++;
-    }
-    return idx - 1;
-} */
 
 String EVBase::get_command_name()
 {

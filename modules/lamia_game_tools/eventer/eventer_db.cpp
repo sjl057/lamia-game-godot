@@ -31,6 +31,7 @@ Ref<EVBase> EventerDB::get_command_instance(const String &p_class_or_script)
     else if (EventerDB::is_script_console_command(p_class_or_script))
     {
         Ref<Script> scr = script_commands[p_class_or_script];
+        if (not scr->is_tool()) { return ret; }
 
         Variant inst = ClassDB::instantiate(scr->get_instance_base_type());
         Object *obj = inst;

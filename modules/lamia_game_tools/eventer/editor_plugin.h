@@ -26,6 +26,8 @@ private:
     FilterEdit *filter_edit = nullptr;
     FilterTree *tree = nullptr;
 
+    void _add_command(Ref<EVCommand> p_command, TreeItem *p_parent);
+
     void _on_tree_item_button_clicked(const TreeItem* p_item, const int &p_column, const bool &p_id, const int &p_mouse_button_index);
     // void _on_button_pressed(Ref<Script> p_script);
 

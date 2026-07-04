@@ -48,9 +48,10 @@ protected:
     static void _bind_methods();
 
 public:
-    _FORCE_INLINE_ void set_message(const String &p_message) { message = p_message; }
+    _FORCE_INLINE_ void set_message(const String &p_message) { message = p_message; emit_changed(); }
     _FORCE_INLINE_ String get_message() const { return message; }
 
+    virtual String get_command_suffix() override;
     virtual String get_command_category() override { return "Utility"; }
 
     virtual void start() override

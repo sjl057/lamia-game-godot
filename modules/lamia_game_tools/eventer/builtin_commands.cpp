@@ -56,6 +56,11 @@ void EVConsolePrint::_bind_methods()
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "message", PROPERTY_HINT_MULTILINE_TEXT), "set_message", "get_message");
 }
 
+String EVConsolePrint::get_command_suffix()
+{
+    return message;
+}
+
 
 
 bool EVVarCheck::_set(const StringName &p_name, const Variant &p_value)

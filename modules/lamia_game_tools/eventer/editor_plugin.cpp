@@ -8,7 +8,6 @@
 #include "core/math/rect2i.h"
 #include "core/math/vector2i.h"
 #include "editor/editor_string_names.h"
-#include "modules/lamia_game_tools/eventer/builtin_commands.h"
 #include "modules/lamia_game_tools/eventer/eventer_db.h"
 #include "modules/lamia_game_tools/general/filter_edit.h"
 #include "modules/lamia_game_tools/general/filter_tree.h"
@@ -76,13 +75,31 @@ void EventerAddCommandTree::_bind_methods()
     ADD_SIGNAL(MethodInfo("command_added", PropertyInfo(Variant::OBJECT, "command", PROPERTY_HINT_RESOURCE_TYPE, "EVBase")));
 }
 
+void EventerAddCommandTree::_add_command(Ref<EVCommand> p_command, TreeItem *p_parent)
+{
+    auto theme = EditorNode::get_singleton()->get_editor_theme();
+    auto add_icon = theme->get_icon("Add", EditorStringName(EditorIcons));
+    auto script_icon = theme->get_icon("Script", EditorStringName(EditorIcons));
+
+    TreeItem *command_tree_item = tree->create_item(p_parent);
+    command_tree_item->set_text(0, p_command->get_command_text());
+    command_tree_item->set_metadata(0, p_command);
+    if (p_command->get_script())
+    {
+        command_tree_item->add_button(0, script_icon, 1);
+    }
+    command_tree_item->add_button(0, add_icon, 0);
+    command_tree_item->set_icon(0, p_command->get_command_icon());
+    auto color = p_command->get_command_color();
+    if (not color.is_equal_approx(Color(1.0, 1.0, 1.0, 0.0)))
+    {
+        command_tree_item->set_custom_color(0, color);
+    }
+}
+
 void EventerAddCommandTree::setup(Ref<EventerSequence> p_sequence)
 {
     ERR_FAIL_NULL(p_sequence);
-
-    auto theme = EditorNode::get_singleton()->get_editor_theme();
-    // auto icon = theme->get_icon("EVBase", EditorStringName(EditorIcons));
-    auto add_icon = theme->get_icon("Add", EditorStringName(EditorIcons));
 
     AHashMap<StringName, TreeItem*> categories;
 
@@ -91,6 +108,8 @@ void EventerAddCommandTree::setup(Ref<EventerSequence> p_sequence)
 
     PackedStringArray commands = EventerDB::get_commands();
     // global classes
+
+    LocalVector<Ref<EVCommand>> uncategorized_commands;
 
     for (const String &command : commands)
     {
@@ -115,27 +134,20 @@ void EventerAddCommandTree::setup(Ref<EventerSequence> p_sequence)
                 category_parent = categories[category];
             }
         }
-
-        TreeItem *command_tree_item = nullptr;
         
         if (category_parent)
         {
-            command_tree_item = category_parent->create_child();
+            _add_command(command_instance, category_parent);
         }
         else
         {
-            command_tree_item = tree->create_item();
+            uncategorized_commands.push_back(command_instance);
         }
+    }
 
-        command_tree_item->set_text(0, command_instance->get_command_text());
-        command_tree_item->set_metadata(0, command_instance);
-        command_tree_item->add_button(0, add_icon);
-        command_tree_item->set_icon(0, command_instance->get_command_icon());
-        auto color = command_instance->get_command_color();
-        if (not color.is_equal_approx(Color(1.0, 1.0, 1.0, 0.0)))
-        {
-            command_tree_item->set_custom_color(0, color);
-        }
+    for (const Ref<EVCommand> &command : uncategorized_commands)
+    {
+        _add_command(command, nullptr);
     }
 }
 
@@ -146,7 +158,14 @@ void EventerAddCommandTree::_on_tree_item_button_clicked(const TreeItem* p_item,
     Ref<EVCommand> command = p_item->get_metadata(0);
     if (command.is_valid())
     {
-        emit_signal("command_added", command->duplicate(true));
+        if (p_id == 0)
+        {
+            emit_signal("command_added", command->duplicate(true));
+        }
+        else if (p_id == 1)
+        {
+            EditorInterface::get_singleton()->edit_resource(command->get_script());
+        }
     }
 }
 
@@ -448,7 +467,7 @@ void EventerEditorTree::duplicate_selected_commands()
     Ref<EVBase> duplicate_to = get_root_command();
     if (get_selected_command().is_valid())
     {
-        duplicate_to = get_selected_command();
+        duplicate_to = get_selected_command()->get_parent();
     }
 
     for (const Ref<EVBase> &command : selected_commands)
@@ -649,6 +668,7 @@ void EventerEditorTree::drop_data_fw(const Point2 &at_position, const Variant &p
         switch (tree->get_drop_section_at_position(at_position))
         {
             case -1: // parent to parent of target command, above
+                print_line("above");
                 for (Variant &dragged_command_i : commands)
                 {
                     Ref<EVCommand> dragged_command = dragged_command_i;
@@ -659,7 +679,7 @@ void EventerEditorTree::drop_data_fw(const Point2 &at_position, const Variant &p
                         undo_redo->add_do_method(target_command->get_parent().ptr(), "_add_child", dragged_command);
                     }
 
-                    undo_redo->add_do_method(target_command->get_parent().ptr(), "_move_child", dragged_command, target_command->get_child_index() - 1);
+                    undo_redo->add_do_method(target_command->get_parent().ptr(), "_move_child", dragged_command, target_command->get_child_index());
                     if (dragged_command->get_parent().is_valid())
                     {
                         undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_add_child", dragged_command);
@@ -692,6 +712,7 @@ void EventerEditorTree::drop_data_fw(const Point2 &at_position, const Variant &p
                 break;
 
             case 1: // parent to parent of target command, below
+                print_line("below");
                 for (Variant &dragged_command_i : commands)
                 {
                     Ref<EVCommand> dragged_command = dragged_command_i;
@@ -833,6 +854,19 @@ void EventerEditorTree::_on_item_activated()
     auto selected_command = get_selected_command();
     if (not selected_command.is_valid()) { return; }
     if (not selected_command->get_edit_flags().has_flag(EVBase::EDIT_FLAGS_CAN_MODIFY)) { return; }
+
+    if (last_selected.is_valid())
+    {
+        last_selected->disconnect_changed(callable_mp(this, &EventerEditorTree::refresh));
+    }
+
+    last_selected = selected_command;
+
+    if (selected_command.is_valid())
+    {
+        last_selected->connect_changed(callable_mp(this, &EventerEditorTree::refresh));
+
+    }
 
     EditorInterface::get_singleton()->edit_resource(selected_command);
 }
