@@ -1,15 +1,13 @@
 #pragma once
 
-#include "modules/lamia_game_tools/general/filter_edit.h"
 #ifdef TOOLS_ENABLED
 
+#include "modules/lamia_game_tools/general/filter_edit.h"
 #include "scene/resources/texture.h"
 #include "core/object/object.h"
 #include "core/templates/local_vector.h"
 #include "editor/plugins/editor_plugin.h"
-#include "modules/lamia_game_tools/eventer/ev.h"
 #include "modules/lamia_game_tools/eventer/sequence.h"
-#include "scene/gui/box_container.h"
 #include "scene/gui/control.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/tab_container.h"
@@ -20,9 +18,9 @@
 #include "scene/gui/panel_container.h"
 #include "scene/gui/split_container.h"
 
-class EventerPickerPanel : public Control
+class EventerAddCommandTree : public Control
 {
-    GDCLASS(EventerPickerPanel, Control);
+    GDCLASS(EventerAddCommandTree, Control);
 
 private:
     FilterEdit *filter_edit = nullptr;
@@ -37,7 +35,7 @@ protected:
 public:
     void setup(Ref<EventerSequence> p_sequence);
 
-    EventerPickerPanel();
+    EventerAddCommandTree();
 };
 
 class EventerEditorTree : public Control
@@ -56,7 +54,7 @@ private:
     };
 
     HSplitContainer *hsplit = nullptr;
-    EventerPickerPanel *picker_panel = nullptr;
+    EventerAddCommandTree *add_command_tree = nullptr;
     Tree *tree = nullptr;
     PopupMenu *popup_menu = nullptr;
 
@@ -64,34 +62,41 @@ private:
     bool unsaved = false;
 
     Ref<EVBase> last_selected;
-    Vector<Ref<EVBase>> clipboard;
 
     void refresh();
     void add_commands_from(Ref<EVBase> p_command, TreeItem *parent = nullptr);
     void show_popup_menu();
 
-    Ref<EVBase> get_root_command() const;
     Ref<EVBase> get_selected_command() const;
     LocalVector<Ref<EVBase>> get_selected_commands() const;
+    Ref<EVBase> get_command_at_position(const Point2 &at_position) const;
+
     void cut_selected_commands();
     void copy_selected_commands();
     void paste_commands();
     void duplicate_selected_commands();
     void delete_selected_commands();
+    void edit_selected_command_script();
 
-	void gui_input_fw(const Ref<InputEvent> &p_event);
-    void get_drag_data_fw(const Point2 &at_position) const;
-    void can_drop_data_fw(const Point2 &at_position, const Variant &p_data);
+    TypedArray<Ref<EVBase>> normalize_drag_data(const Variant &p_data) const;
+    Variant get_drag_data_fw(const Point2 &at_position) const;
+    bool can_drop_data_fw(const Point2 &at_position, const Variant &p_data);
     void drop_data_fw(const Point2 &at_position, const Variant &p_data);
 
     void _on_command_added(Ref<EVBase> p_command);
+    void _on_item_activated();
+    void _on_item_mouse_selected(const Vector2 &p_mouse_position, const MouseButton &p_mouse_button_index);
+    void _on_popup_menu_id_pressed(const int &p_id);
     void _on_hsplit_drag_ended();
 
 protected:
-    void notification(int p_what);
+    virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
+    void _notification(int p_what);
     static void _bind_methods();
 
 public:
+    Ref<EVBase> get_root_command() const;
+
     Ref<EventerSequence> get_sequence() const { return sequence; }
 
     void setup(Ref<EventerSequence> p_sequence);
@@ -102,11 +107,6 @@ public:
 
     EventerEditorTree();
 };
-
-// class EventerEditorTab : public Control
-// {
-
-// };
 
 class EventerEditor : public Control
 {
@@ -119,18 +119,25 @@ private:
     Label *open_file_label = nullptr;
     TabContainer *tabs = nullptr;
 
+    Vector<Ref<EVBase>> clipboard;
+
     void show_editor();
     void hide_editor();
 
+    void _on_tab_button_pressed(const int &p_tab);
     void _on_tab_closed();
 
 protected:
+    void copy_commands(Array p_commands);
+    void paste_commands(Ref<EVBase> p_paste_target, EventerEditorTree *p_tree);
+
     static void _bind_methods() {};
 
 public:
     void open_sequence(Ref<EventerSequence> p_sequence);
     void save_current();
     void save_all();
+    void close_tab(const int &p_tab);
     void close_all();
 
     void set_separation(int p_separation);
@@ -152,9 +159,6 @@ protected:
     static void _bind_methods() {};
 
 public:
-//gui_input_fw
-	// virtual bool forward_canvas_gui_input(const Ref<InputEvent> &p_event) override { return path2d_editor->forward_gui_input(p_event); }
-
     virtual String get_plugin_name() const override { return "Eventer"; }
     bool has_main_screen() const override { return true; }
     const virtual Ref<Texture2D> get_plugin_icon() const override;
@@ -164,8 +168,6 @@ public:
     virtual void save_external_data() override;
 	virtual void set_window_layout(Ref<ConfigFile> p_layout) override;
 	virtual void get_window_layout(Ref<ConfigFile> p_layout) override;
-    virtual void set_state(const Dictionary &p_state) override;
-    virtual Dictionary get_state() const override;
 
     EditorPluginEventer();
 };

@@ -1,13 +1,21 @@
+#ifdef TOOLS_ENABLED
+
+#include "core/math/vector2.h"
+#include "core/variant/typed_array.h"
+#include "core/variant/variant.h"
+#include "scene/gui/tab_bar.h"
+#include "scene/main/canvas_item.h"
+#include "core/math/rect2i.h"
+#include "core/math/vector2i.h"
 #include "editor/editor_string_names.h"
+#include "modules/lamia_game_tools/eventer/builtin_commands.h"
 #include "modules/lamia_game_tools/eventer/eventer_db.h"
 #include "modules/lamia_game_tools/general/filter_edit.h"
 #include "modules/lamia_game_tools/general/filter_tree.h"
 #include "scene/gui/box_container.h"
-#ifdef TOOLS_ENABLED
-
+#include "servers/display/display_server.h"
 #include "core/input/input_event.h"
 #include "core/math/math_defs.h"
-#include "core/os/keyboard.h"
 #include "editor/editor_interface.h"
 #include "scene/gui/label.h"
 #include "scene/gui/panel_container.h"
@@ -19,32 +27,25 @@
 #include "core/io/resource_loader.h"
 #include "core/os/memory.h"
 #include "core/templates/a_hash_map.h"
-#include "scene/gui/control.h"
-#include "scene/gui/flow_container.h"
-#include "core/config/project_settings.h"
-#include "core/string/string_name.h"
-#include "core/variant/variant.h"
 #include "editor/editor_main_screen.h"
 #include "scene/resources/theme.h"
 #include "editor_plugin.h"
 #include "core/object/object.h"
 #include "editor/editor_node.h"
 #include "scene/gui/popup_menu.h"
-#include "scene/main/node.h"
 #include "core/object/callable_method_pointer.h"
-#include "core/object/script_language.h"
 #include "modules/lamia_game_tools/general/defs.h"
 #include "core/math/math_funcs.h"
 #include "core/object/class_db.h"
 #include "editor/editor_undo_redo_manager.h"
-#include "modules/lamia_game_tools/eventer/ev.h"
-#include "modules/lamia_game_tools/eventer/eventer.h"
 #include "core/io/resource.h"
 #include "core/templates/local_vector.h"
 #include "core/variant/dictionary.h"
 #include "modules/lamia_game_tools/eventer/sequence.h"
+#include "core/input/input_enums.h"
+#include "core/string/print_string.h"
 
-EventerPickerPanel::EventerPickerPanel()
+EventerAddCommandTree::EventerAddCommandTree()
 {
     set_anchors_and_offsets_preset(PRESET_FULL_RECT);
     set_h_size_flags(SIZE_EXPAND_FILL);
@@ -60,116 +61,95 @@ EventerPickerPanel::EventerPickerPanel()
     tree->set_h_size_flags(SIZE_EXPAND_FILL);
     tree->set_v_size_flags(SIZE_EXPAND_FILL);
     tree->set_hide_root(true);
-    tree->connect(SNAME("button_clicked"), callable_mp(this, &EventerPickerPanel::_on_tree_item_button_clicked));
+    tree->connect("button_clicked", callable_mp(this, &EventerAddCommandTree::_on_tree_item_button_clicked));
 
     filter_edit = memnew(FilterEdit);
     filter_edit->set_h_size_flags(SIZE_EXPAND_FILL);
-    filter_edit->connect(SNAME("text_changed"), callable_mp(tree, &FilterTree::set_filter));
+    filter_edit->connect("text_changed", callable_mp(tree, &FilterTree::set_filter));
 
     vbox->add_child(filter_edit);
     vbox->add_child(tree);
 }
 
-void EventerPickerPanel::_bind_methods()
+void EventerAddCommandTree::_bind_methods()
 {
     ADD_SIGNAL(MethodInfo("command_added", PropertyInfo(Variant::OBJECT, "command", PROPERTY_HINT_RESOURCE_TYPE, "EVBase")));
 }
 
-void EventerPickerPanel::setup(Ref<EventerSequence> p_sequence)
+void EventerAddCommandTree::setup(Ref<EventerSequence> p_sequence)
 {
     ERR_FAIL_NULL(p_sequence);
 
     auto theme = EditorNode::get_singleton()->get_editor_theme();
+    // auto icon = theme->get_icon("EVBase", EditorStringName(EditorIcons));
     auto add_icon = theme->get_icon("Add", EditorStringName(EditorIcons));
 
     AHashMap<StringName, TreeItem*> categories;
 
-    PackedStringArray user_command_paths = EventerDB::get_script_command_paths();
-
     tree->clear();
     tree->create_item();
 
-    // builtin classes, global classes, then paths
-    // add a function that adds an item from a script
+    PackedStringArray commands = EventerDB::get_commands();
+    // global classes
 
-    for (const String &path : user_command_paths)
+    for (const String &command : commands)
     {
-        Ref<Script> command_script = ResourceLoader::load(path);
-        if (command_script->is_abstract() or not command_script->is_tool())
+        Ref<EVCommand> command_instance = EventerDB::get_command_instance(command);
+        if (not command_instance.is_valid() or not command_instance->show_in_add_tree())
         {
             continue;
         }
 
-        StringName base_type = command_script->get_instance_base_type();
-        if (base_type == StringName())
-        {
-            command_script->reload(true);
-            base_type = command_script->get_instance_base_type();
-        }
-
-        Object *object = ClassDB::instantiate(base_type);
-        if (not object->is_class(base_type))
-        {
-            memdelete(object);
-            return;
-        }
-
-        Ref<EVBase> command_instance;
-        command_instance.reference_ptr(Object::cast_to<EVBase>(object));
-        command_instance->set_script(command_script);
-
         StringName category = command_instance->get_command_category();
+        TreeItem *category_parent = nullptr;
         if (not category.is_empty())
         {
             if (not categories.has(category))
             {
-                auto category_tree_item = tree->create_item();
-                category_tree_item->set_text(0, category);
-                categories.insert(category, category_tree_item);
+                category_parent = tree->create_item();
+                category_parent->set_text(0, category);
+                categories.insert(category, category_parent);
             }
-
-            auto category_tree_item = categories[category];
-            auto command_tree_item = category_tree_item->create_child();
-            command_tree_item->set_text(0, command_instance->get_command_text());
-            command_tree_item->set_metadata(0, command_script);
-            command_tree_item->add_button(0, add_icon);
-            auto color = command_instance->get_command_color();
-            if (not color.is_equal_approx(Color(1.0, 1.0, 1.0, 0.0)))
+            else
             {
-                command_tree_item->set_custom_color(0, color);
+                category_parent = categories[category];
             }
+        }
+
+        TreeItem *command_tree_item = nullptr;
+        
+        if (category_parent)
+        {
+            command_tree_item = category_parent->create_child();
         }
         else
         {
-            auto command_tree_item = tree->create_item();
-            command_tree_item->set_text(0, command_instance->get_command_text());
-            command_tree_item->set_metadata(0, command_script);
-            command_tree_item->add_button(0, add_icon);
-            auto color = command_instance->get_command_color();
-            if (not color.is_equal_approx(Color(1.0, 1.0, 1.0, 0.0)))
-            {
-                command_tree_item->set_custom_color(0, color);
-            }
+            command_tree_item = tree->create_item();
+        }
+
+        command_tree_item->set_text(0, command_instance->get_command_text());
+        command_tree_item->set_metadata(0, command_instance);
+        command_tree_item->add_button(0, add_icon);
+        command_tree_item->set_icon(0, command_instance->get_command_icon());
+        auto color = command_instance->get_command_color();
+        if (not color.is_equal_approx(Color(1.0, 1.0, 1.0, 0.0)))
+        {
+            command_tree_item->set_custom_color(0, color);
         }
     }
 }
 
-void EventerPickerPanel::_on_tree_item_button_clicked(const TreeItem* p_item, const int &p_column, const bool &p_id, const int &p_mouse_button_index)
+void EventerAddCommandTree::_on_tree_item_button_clicked(const TreeItem* p_item, const int &p_column, const bool &p_id, const int &p_mouse_button_index)
 {
     if (not p_item) { return; }
 
-    Ref<Script> script = p_item->get_metadata(0);
-    if (script->is_valid())
+    Ref<EVCommand> command = p_item->get_metadata(0);
+    if (command.is_valid())
     {
-        StringName base_type = script->get_instance_base_type();
-        Object *object = ClassDB::instantiate(base_type);
-
-        Ref<EVBase> script_instance;
-        script_instance.reference_ptr(Object::cast_to<EVBase>(object));
-        script_instance->set_script(script);
-        emit_signal(SNAME("command_added"), script_instance);
+        emit_signal("command_added", command->duplicate(true));
     }
 }
+
 
 
 EventerEditorTree::EventerEditorTree()
@@ -177,20 +157,20 @@ EventerEditorTree::EventerEditorTree()
     set_anchors_preset(PRESET_FULL_RECT);
     set_h_size_flags(SIZE_EXPAND_FILL);
     set_v_size_flags(SIZE_EXPAND_FILL);
+    set_process_shortcut_input(true);
 
     hsplit = memnew(HSplitContainer);
     hsplit->set_anchors_preset(PRESET_FULL_RECT);
     hsplit->set_h_size_flags(SIZE_EXPAND_FILL);
     hsplit->set_v_size_flags(SIZE_EXPAND_FILL);
-    // hsplit->set_split_offset(200, 0);
-    hsplit->connect(SNAME("drag_ended"), callable_mp(this, &EventerEditorTree::_on_hsplit_drag_ended));
+    hsplit->connect("drag_ended", callable_mp(this, &EventerEditorTree::_on_hsplit_drag_ended));
     add_child(hsplit);
 
-    picker_panel = memnew(EventerPickerPanel);
-    picker_panel->set_h_size_flags(SIZE_EXPAND_FILL);
-    picker_panel->set_v_size_flags(SIZE_EXPAND_FILL);
-    picker_panel->connect(SNAME("command_added"), callable_mp(this, &EventerEditorTree::_on_command_added));
-    hsplit->add_child(picker_panel);
+    add_command_tree = memnew(EventerAddCommandTree);
+    add_command_tree->set_h_size_flags(SIZE_EXPAND_FILL);
+    add_command_tree->set_v_size_flags(SIZE_EXPAND_FILL);
+    add_command_tree->connect("command_added", callable_mp(this, &EventerEditorTree::_on_command_added));
+    hsplit->add_child(add_command_tree);
 
     tree = memnew(Tree);
     tree->set_h_size_flags(SIZE_EXPAND_FILL);
@@ -198,10 +178,38 @@ EventerEditorTree::EventerEditorTree()
     tree->set_hide_root(true);
     tree->set_select_mode(Tree::SELECT_MULTI);
     tree->set_drag_forwarding(callable_mp(this, &EventerEditorTree::get_drag_data_fw), callable_mp(this, &EventerEditorTree::can_drop_data_fw), callable_mp(this, &EventerEditorTree::drop_data_fw));
+    tree->connect("item_activated", callable_mp(this, &EventerEditorTree::_on_item_activated));
+    tree->connect("item_mouse_selected", callable_mp(this, &EventerEditorTree::_on_item_mouse_selected));
+    tree->connect("nothing_selected", callable_mp(tree, &Tree::deselect_all));
     hsplit->add_child(tree);
 
     popup_menu = memnew(PopupMenu);
+    popup_menu->connect("id_pressed", callable_mp(this, &EventerEditorTree::_on_popup_menu_id_pressed));
     add_child(popup_menu);
+}
+
+void EventerEditorTree::_notification(int p_what)
+{
+    if (p_what == NOTIFICATION_VISIBILITY_CHANGED)
+    {
+        if (is_visible_in_tree())
+        {
+            refresh();
+        }
+    }
+}
+
+void EventerEditorTree::_bind_methods()
+{
+    BIND(D_METHOD("_refresh"), &EventerEditorTree::refresh);
+    BIND(D_METHOD("_copy_selected_commands"), &EventerEditorTree::copy_selected_commands);
+
+    ADD_SIGNAL(MethodInfo("saved"));
+    ADD_SIGNAL(MethodInfo("closed"));
+    ADD_SIGNAL(MethodInfo("separation_changed", PropertyInfo(Variant::INT, "new_separation")));
+
+    ADD_SIGNAL(MethodInfo("copy_requested", PropertyInfo(Variant::ARRAY, "copied_commands")));
+    ADD_SIGNAL(MethodInfo("paste_requested", PropertyInfo(Variant::OBJECT, "paste_target", PROPERTY_HINT_RESOURCE_TYPE, "EVBase")));
 }
 
 void EventerEditorTree::refresh()
@@ -217,13 +225,12 @@ void EventerEditorTree::refresh()
     {
         EditorInterface::get_singleton()->mark_scene_as_unsaved();
     }
-    picker_panel->setup(sequence);
+    add_command_tree->setup(sequence);
 }
 
 void EventerEditorTree::add_commands_from(Ref<EVBase> p_command, TreeItem *parent)
 {
     auto theme = EditorNode::get_singleton()->get_editor_theme();
-    auto icon = theme->get_icon(SNAME("Node"), EditorStringName(EditorIcons));
     auto missing_icon = theme->get_icon(SNAME("MissingNode"), EditorStringName(EditorIcons));
 
     for (const Ref<EVBase> child : p_command->get_children())
@@ -233,7 +240,7 @@ void EventerEditorTree::add_commands_from(Ref<EVBase> p_command, TreeItem *paren
         tree_item->set_suffix(0, child->get_command_suffix());
         if (child->is_enabled()) // and not has disabled ancestor
         {
-            tree_item->set_icon(0, icon);
+            tree_item->set_icon(0, child->get_command_icon());
             if (child->get_command_color() != Color::get_named_color(Color::find_named_color("TRANSPARENT")))
             {
                 tree_item->set_icon_modulate(0, child->get_command_color());
@@ -246,29 +253,14 @@ void EventerEditorTree::add_commands_from(Ref<EVBase> p_command, TreeItem *paren
             tree_item->set_custom_color(0, Color::get_named_color(Color::find_named_color("WEB_GRAY")));
         }
 
-        /* if (not child->get_configuration_warnings().is_empty())
+        if (not child->get_configuration_warnings().is_empty())
         {
 
-        } */
+        }
 
         tree_item->set_metadata(0, child);
         add_commands_from(child, tree_item);
     }
-}
-
-void EventerEditorTree::notification(int p_what)
-{
-    
-}
-
-void EventerEditorTree::_bind_methods()
-{
-    BIND(D_METHOD("_refresh"), &EventerEditorTree::refresh);
-    BIND(D_METHOD("_copy_selected_commands"), &EventerEditorTree::copy_selected_commands);
-
-    ADD_SIGNAL(MethodInfo("saved"));
-    ADD_SIGNAL(MethodInfo("closed"));
-    ADD_SIGNAL(MethodInfo("separation_changed", PropertyInfo(Variant::INT, "new_separation")));
 }
 
 void EventerEditorTree::setup(Ref<EventerSequence> p_sequence)
@@ -285,16 +277,19 @@ void EventerEditorTree::save()
     EditorNode::get_singleton()->save_resource(sequence);
 
     unsaved = false;
-    emit_signal(SNAME("saved"));  
+    emit_signal("saved");  
 }
 
 void EventerEditorTree::close()
 {
-    if (not sequence.is_valid()) { return; }
+    if (sequence.is_valid())
+    {
+        // save();
+        auto undo_redo = EditorInterface::get_singleton()->get_editor_undo_redo();
+        undo_redo->clear_history(undo_redo->get_history_id_for_object(this));
+    }
 
-    auto undo_redo = EditorInterface::get_singleton()->get_editor_undo_redo();
-    undo_redo->clear_history(undo_redo->get_history_id_for_object(sequence.ptr()));
-    emit_signal(SNAME("closed"));
+    emit_signal("closed");
     queue_free();
 }
 
@@ -310,7 +305,32 @@ int EventerEditorTree::get_separation() const
 
 void EventerEditorTree::show_popup_menu()
 {
+    Ref<EVBase> command = get_selected_command();
+    if (not command.is_valid()) { return; }
+    
+    Ref<Theme> theme = EditorNode::get_singleton()->get_editor_theme();
+
     popup_menu->clear();
+    popup_menu->add_icon_item(theme->get_icon("Script", EditorStringName(EditorIcons)), "Edit Script", ACTION_EDIT_SCRIPT);
+    popup_menu->add_separator();
+    popup_menu->add_icon_item(theme->get_icon("ActionCut", EditorStringName(EditorIcons)), "Cut", ACTION_CUT);
+    popup_menu->add_icon_item(theme->get_icon("ActionCopy", EditorStringName(EditorIcons)), "Copy", ACTION_COPY);
+    popup_menu->add_icon_item(theme->get_icon("ActionPaste", EditorStringName(EditorIcons)), "Paste", ACTION_PASTE);
+    popup_menu->add_icon_item(theme->get_icon("Duplicate", EditorStringName(EditorIcons)), "Duplicate", ACTION_DUPLICATE);
+    popup_menu->add_separator();
+    popup_menu->add_icon_item(theme->get_icon("Remove", EditorStringName(EditorIcons)), "Delete", ACTION_DELETE);
+    
+    if (not command->get_edit_flags().has_flag(EVBase::EDIT_FLAGS_CAN_MODIFY))
+    {
+        // popup_menu->set_item_disabled(1, true);
+        popup_menu->set_item_disabled(2, true);
+        popup_menu->set_item_disabled(3, true);
+        popup_menu->set_item_disabled(4, true);
+        popup_menu->set_item_disabled(5, true);
+        popup_menu->set_item_disabled(7, true);
+    }
+
+    popup_menu->popup(Rect2i(DisplayServer::get_singleton()->mouse_get_position(), Size2i(90, 180)));
 }
 
 Ref<EVBase> EventerEditorTree::get_root_command() const
@@ -348,6 +368,20 @@ LocalVector<Ref<EVBase>> EventerEditorTree::get_selected_commands() const
     return ret;
 }
 
+Ref<EVBase> EventerEditorTree::get_command_at_position(const Point2 &at_position) const
+{
+    auto item = tree->get_item_at_position(at_position);
+    if (item)
+    {
+        Ref<EVBase> command = item->get_metadata(0);
+        if (command.is_valid())
+        {
+            return command;
+        }
+    }
+    return nullptr;
+}
+
 void EventerEditorTree::cut_selected_commands()
 {
     auto selected_commands = get_selected_commands();
@@ -357,53 +391,49 @@ void EventerEditorTree::cut_selected_commands()
     if (undo_redo->is_committing_action()) { return; }
     undo_redo->create_action("Cut Command(s)");
 
-    for (Ref<EVBase> command : selected_commands)
+    for (Ref<EVCommand> command : selected_commands)
     {
         if (not command.is_valid()) { continue; }
+        if (not command->get_edit_flags().has_flag(EVBase::EDIT_FLAGS_CAN_MODIFY)) { continue; }
 
-        undo_redo->add_do_method(this, SNAME("_copy_selected_commands"));
-        undo_redo->add_do_method(command->get_parent().ptr(), SNAME("_remove_child"), command);
-        undo_redo->add_undo_method(command->get_parent().ptr(), SNAME("_add_child"), command);
-        undo_redo->add_undo_method(command->get_parent().ptr(), SNAME("_move_child"), command, command->get_child_index());
+        undo_redo->add_do_method(this, "_copy_selected_commands");
+        undo_redo->add_do_method(command->get_parent().ptr(), "_remove_child", command);
+        undo_redo->add_undo_method(command->get_parent().ptr(), "_add_child", command);
+        undo_redo->add_undo_method(command->get_parent().ptr(), "_move_child", command, command->get_child_index());
     }
 
-    undo_redo->add_do_method(this, SNAME("_refresh"));
-    undo_redo->add_undo_method(this, SNAME("_refresh"));
+    undo_redo->add_do_method(this, "_refresh");
+    undo_redo->add_undo_method(this, "_refresh");
 
     undo_redo->commit_action();
 }
 
 void EventerEditorTree::copy_selected_commands()
 {
-    clipboard.clear();
+    Array copied_commands;
 
     auto selected_commands = get_selected_commands();
     if (selected_commands.is_empty()) { return; }
 
-    for (Ref<EVBase> command : selected_commands)
+    for (const Ref<EVBase> &command : selected_commands)
     {
         if (not command.is_valid()) { continue; }
-        clipboard.push_back(command);
+        if (not command->get_edit_flags().has_flag(EVBase::EDIT_FLAGS_CAN_MODIFY)) { continue; }
+
+        copied_commands.push_back(command->duplicate_deep());
     }
+
+    emit_signal("copy_requested", copied_commands);
 }
 
 void EventerEditorTree::paste_commands()
 {
-    if (clipboard.is_empty()) { return; }
-
-    auto undo_redo = EditorInterface::get_singleton()->get_editor_undo_redo();
-    if (undo_redo->is_committing_action()) { return; }
-    undo_redo->create_action("Paste Command(s)");
-
-    for (Ref<EVBase> command : clipboard)
+    Ref<EVBase> paste_to = get_root_command();
+    if (get_selected_command().is_valid())
     {
-
+        paste_to = get_selected_command();
     }
-
-    undo_redo->add_do_method(this, SNAME("_refresh"));
-    undo_redo->add_undo_method(this, SNAME("_refresh"));
-
-    undo_redo->commit_action();
+    emit_signal("paste_requested", paste_to);
 }
 
 void EventerEditorTree::duplicate_selected_commands()
@@ -415,13 +445,23 @@ void EventerEditorTree::duplicate_selected_commands()
     if (undo_redo->is_committing_action()) { return; }
     undo_redo->create_action("Duplicate Command(s)");
 
-    for (Ref<EVBase> command : selected_commands)
+    Ref<EVBase> duplicate_to = get_root_command();
+    if (get_selected_command().is_valid())
     {
-
+        duplicate_to = get_selected_command();
     }
 
-    undo_redo->add_do_method(this, SNAME("_refresh"));
-    undo_redo->add_undo_method(this, SNAME("_refresh"));
+    for (const Ref<EVBase> &command : selected_commands)
+    {
+        if (not command->get_edit_flags().has_flag(EVBase::EDIT_FLAGS_CAN_MODIFY)) { continue; }
+
+        auto duplicate = command->duplicate_deep();
+        undo_redo->add_do_method(duplicate_to.ptr(), "_add_child", duplicate);
+        undo_redo->add_undo_method(duplicate_to.ptr(), "_remove_child", duplicate);
+    }
+
+    undo_redo->add_do_method(this, "_refresh");
+    undo_redo->add_undo_method(this, "_refresh");
 
     undo_redo->commit_action();
 }
@@ -435,74 +475,290 @@ void EventerEditorTree::delete_selected_commands()
     if (undo_redo->is_committing_action()) { return; }
     undo_redo->create_action("Delete Command(s)");
 
-    for (Ref<EVBase> command : selected_commands)
+    for (Ref<EVCommand> command : selected_commands)
     {
         if (not command.is_valid()) { continue; }
+        if (command->is_root()) { continue; } // shouldn't be possible
+        if (not command->get_edit_flags().has_flag(EVBase::EDIT_FLAGS_CAN_MODIFY)) { continue; }
 
-        undo_redo->add_do_method(command->get_parent().ptr(), SNAME("_remove_child"), command);
-        undo_redo->add_undo_method(command->get_parent().ptr(), SNAME("_add_child"), command);
-        undo_redo->add_undo_method(command->get_parent().ptr(), SNAME("_move_child"), command, command->get_child_index());
+        Ref<EVCommand> command_parent = command->get_parent();
+        if (not command_parent.is_valid())
+        {
+            ERR_PRINT("Command doesn't have a parent, this shouldn't be possible");
+            continue;
+        } 
+
+        undo_redo->add_do_method(command_parent.ptr(), "_remove_child", command);
+        undo_redo->add_undo_method(command_parent.ptr(), "_add_child", command);
+        undo_redo->add_undo_method(command_parent.ptr(), "_move_child", command, command->get_child_index());
     }
 
-    undo_redo->add_do_method(this, SNAME("_refresh"));
-    undo_redo->add_undo_method(this, SNAME("_refresh"));
+    undo_redo->add_do_method(this, "_refresh");
+    undo_redo->add_undo_method(this, "_refresh");
 
     undo_redo->commit_action();
 }
 
-void EventerEditorTree::gui_input_fw(const Ref<InputEvent> &p_event)
+void EventerEditorTree::edit_selected_command_script()
+{
+    auto selected_command = get_selected_command();
+    if (not selected_command.is_valid()) { return; }
+
+    if (selected_command->get_script())
+    {
+        EditorInterface::get_singleton()->edit_resource(selected_command->get_script());
+    }
+    else
+    {
+        print_line("Command doesn't have a script, can't open");
+    }
+}
+
+void EventerEditorTree::shortcut_input(const Ref<InputEvent> &p_event)
 {
     Ref<InputEventKey> event = p_event;
     if (event.is_valid())
     {
-        if (event->is_pressed() and not event->is_echo() and event->is_command_or_control_pressed())
+        if (event->is_pressed() and not event->is_echo())
         {
-            switch (event->get_keycode())
+            if (event->is_action("ui_cut"))
             {
-				case Key::X:
-                    cut_selected_commands();
-                    accept_event();
-					break;
-                case Key::C:
-                    copy_selected_commands();
-                    accept_event();
-                    break;
-                case Key::V:
-                    paste_commands();
-                    accept_event();
-                    break;
-                case Key::D:
-                    duplicate_selected_commands();
-                    accept_event();
-                    break;
-                default:
-                    break;
-			}
-		}
-        else
-        {
-            if (event->get_keycode() == Key::KEY_DELETE)
+                cut_selected_commands();
+                accept_event();
+            }
+            if (event->is_action("ui_copy"))
+            {
+                copy_selected_commands();
+                accept_event();
+            }
+            if (event->is_action("ui_paste"))
+            {
+                paste_commands();
+                accept_event();
+            }
+            if (event->is_action("ui_graph_duplicate"))
+            {
+                duplicate_selected_commands();
+                accept_event();
+            }
+            if (event->is_action("ui_text_delete"))
             {
                 delete_selected_commands();
                 accept_event();
             }
-        }
+		}
     }
 }
 
-void EventerEditorTree::get_drag_data_fw(const Point2 &at_position) const
+TypedArray<Ref<EVBase>> EventerEditorTree::normalize_drag_data(const Variant &p_data) const
 {
-    
+    TypedArray<Ref<EVBase>> ret;
+
+    // TODO drag and drop scripts because why not
+
+    Dictionary drag_data = p_data;
+    if (drag_data.is_empty()) { return ret; }
+
+    if (drag_data.has("commands")) // dragging from EventerEditorTree
+    {
+        ret.append_array(drag_data.get("commands", Variant()));
+    }
+
+    return ret;
 }
 
-void EventerEditorTree::can_drop_data_fw(const Point2 &at_position, const Variant &p_data)
+Variant EventerEditorTree::get_drag_data_fw(const Point2 &at_position) const
 {
+    auto selected_commands = get_selected_commands();
+    if (selected_commands.is_empty()) { return Variant(); }
+
+    if (not tree->get_item_at_position(at_position)) { return Variant(); }
+
+    auto preview_vbox = memnew(VBoxContainer);
+
+    Dictionary ret;
+    TypedArray<Ref<EVBase>> commands;
+    for (const Ref<EVBase> &command : selected_commands)
+    {
+        if (not command->get_edit_flags().has_flag(EVBase::EDIT_FLAGS_CAN_MOVE)) { continue; }
+
+        commands.push_back(command);
+
+        auto label = memnew(Label);
+        label->set_text(command->get_command_text());
+        preview_vbox->add_child(label);
+    }
+
+    ret["commands"] = commands;
+
+    tree->set_drag_preview(preview_vbox);
     
+    return ret;
+}
+
+bool EventerEditorTree::can_drop_data_fw(const Point2 &at_position, const Variant &p_data)
+{
+    auto commands = normalize_drag_data(p_data);
+    if (commands.is_empty()) { return false; }
+
+    tree->set_drop_mode_flags(Tree::DROP_MODE_INBETWEEN | Tree::DROP_MODE_ON_ITEM);
+
+    Ref<EVBase> target_command = get_command_at_position(at_position);
+    if (target_command.is_valid() and not commands.has(target_command))
+    {
+        Ref<EVBase> target_command_parent = target_command->get_parent();
+
+        if (target_command_parent.is_valid())
+        {
+            switch (tree->get_drop_section_at_position(at_position))
+            {
+                case 0:
+                    return target_command->can_add_children();
+                case -1:
+                case 1:
+                    return target_command_parent->can_add_children();
+                default:
+                    return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        // drop to root
+        return get_root_command()->can_add_children();
+    }
+
+    return false;
 }
 
 void EventerEditorTree::drop_data_fw(const Point2 &at_position, const Variant &p_data)
 {
-    
+    auto commands = normalize_drag_data(p_data);
+
+    auto undo_redo = EditorInterface::get_singleton()->get_editor_undo_redo();
+    if (undo_redo->is_committing_action()) { return; }
+    undo_redo->create_action("Reparent Command(s)");
+
+    Ref<EVBase> target_command = get_command_at_position(at_position);
+    if (target_command.is_valid() and not commands.has(target_command))
+    {
+        switch (tree->get_drop_section_at_position(at_position))
+        {
+            case -1: // parent to parent of target command, above
+                for (Variant &dragged_command_i : commands)
+                {
+                    Ref<EVCommand> dragged_command = dragged_command_i;
+                    if (not dragged_command.is_valid()) { continue; }
+
+                    if (target_command->get_parent() != dragged_command->get_parent())
+                    {
+                        undo_redo->add_do_method(target_command->get_parent().ptr(), "_add_child", dragged_command);
+                    }
+
+                    undo_redo->add_do_method(target_command->get_parent().ptr(), "_move_child", dragged_command, target_command->get_child_index() - 1);
+                    if (dragged_command->get_parent().is_valid())
+                    {
+                        undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_add_child", dragged_command);
+                        undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_move_child", dragged_command, dragged_command->get_child_index());
+                    }
+                    else
+                    {
+                        undo_redo->add_undo_method(target_command->get_parent().ptr(), "_remove_child", dragged_command);
+                    }
+                }
+                break;
+
+            case 0: // parent to target command
+                for (Variant &dragged_command_i : commands)
+                {
+                    Ref<EVCommand> dragged_command = dragged_command_i;
+                    if (not dragged_command.is_valid()) { continue; }
+
+                    undo_redo->add_do_method(target_command.ptr(), "_add_child", dragged_command);
+
+                    if (dragged_command->get_parent().is_valid())
+                    {
+                        undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_add_child", dragged_command);
+                    }
+                    else
+                    {
+                        undo_redo->add_undo_method(target_command.ptr(), "_remove_child", dragged_command);
+                    }
+                }
+                break;
+
+            case 1: // parent to parent of target command, below
+                for (Variant &dragged_command_i : commands)
+                {
+                    Ref<EVCommand> dragged_command = dragged_command_i;
+                    if (not dragged_command.is_valid()) { continue; }
+
+                    // if dragged below a parentable object, add it to its children at idx 0
+                    if (target_command->can_add_children())
+                    {
+                        undo_redo->add_do_method(target_command.ptr(), "_add_child", dragged_command);
+                        undo_redo->add_do_method(target_command.ptr(), "_move_child", dragged_command, 0);
+                        if (dragged_command->get_parent().is_valid())
+                        {
+                            undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_add_child", dragged_command);
+                            undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_move_child", dragged_command, dragged_command->get_child_index());
+                        }
+                        else
+                        {
+                            undo_redo->add_undo_method(target_command.ptr(), "_remove_child", dragged_command);
+                        }
+                    }
+                    else
+                    {
+                        if (target_command->get_parent() != dragged_command->get_parent())
+                        {
+                            undo_redo->add_do_method(target_command->get_parent().ptr(), "_add_child", dragged_command);
+                        }
+
+                        undo_redo->add_do_method(target_command->get_parent().ptr(), "_move_child", dragged_command, target_command->get_child_index());
+                        if (dragged_command->get_parent().is_valid())
+                        {
+                            undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_add_child", dragged_command);
+                            undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_move_child", dragged_command, dragged_command->get_child_index());
+                        }
+                        else
+                        {
+                            undo_redo->add_undo_method(target_command->get_parent().ptr(), "_remove_child", dragged_command);
+                        }
+                    }
+                }
+                break;
+        }
+    }
+    else
+    {
+        Ref<EVCommand> root_command = get_root_command();
+        for (Variant &dragged_command_i : commands)
+        {
+            Ref<EVCommand> dragged_command = dragged_command_i;
+            if (not dragged_command.is_valid()) { continue; }
+
+            undo_redo->add_do_method(root_command.ptr(), "_add_child", dragged_command);
+
+            if (dragged_command->get_parent().is_valid())
+            {
+                undo_redo->add_undo_method(dragged_command->get_parent().ptr(), "_add_child", dragged_command);
+            }
+            else
+            {
+                undo_redo->add_undo_method(root_command.ptr(), "_remove_child", dragged_command);
+            }
+        }
+    }
+
+    undo_redo->add_do_method(this, "_refresh");
+    undo_redo->add_undo_method(this, "_refresh");
+
+    undo_redo->commit_action();
 }
 
 void EventerEditorTree::_on_command_added(Ref<EVBase> p_command)
@@ -523,33 +779,75 @@ void EventerEditorTree::_on_command_added(Ref<EVBase> p_command)
 
     if (selected_command.is_valid())
     {
-        if (selected_command->get_child_count() > 0)
+        if (selected_command->can_add_children())
         {
-            undo_redo->add_do_method(selected_command.ptr(), SNAME("_add_child"), p_command);
-            undo_redo->add_undo_method(selected_command.ptr(), SNAME("_remove_child"), p_command);
+            undo_redo->add_do_method(selected_command.ptr(), "_add_child", p_command);
+            undo_redo->add_undo_method(selected_command.ptr(), "_remove_child", p_command);
         }
         else
         {
-            undo_redo->add_do_method(selected_command->get_parent().ptr(), SNAME("_add_child"), p_command);
-            undo_redo->add_do_method(selected_command->get_parent().ptr(), SNAME("_move_child"), selected_command->get_child_index() + 1);
-            undo_redo->add_undo_method(selected_command->get_parent().ptr(), SNAME("_remove_child"), p_command);
+            undo_redo->add_do_method(selected_command->get_parent().ptr(), "_add_child", p_command);
+            undo_redo->add_do_method(selected_command->get_parent().ptr(), "_move_child", p_command, selected_command->get_child_index() + 1);
+            undo_redo->add_undo_method(selected_command->get_parent().ptr(), "_remove_child", p_command);
         }
     }
     else
     {
-        undo_redo->add_do_method(get_root_command().ptr(), SNAME("_add_child"), p_command);
-        undo_redo->add_undo_method(get_root_command().ptr(), SNAME("_remove_child"), p_command);
+        undo_redo->add_do_method(get_root_command().ptr(), "_add_child", p_command);
+        undo_redo->add_undo_method(get_root_command().ptr(), "_remove_child", p_command);
     }
 
-    undo_redo->add_do_method(this, SNAME("_refresh"));
-    undo_redo->add_undo_method(this, SNAME("_refresh"));
+    undo_redo->add_do_method(this, "_refresh");
+    undo_redo->add_undo_method(this, "_refresh");
 
     undo_redo->commit_action();
 }
 
+void EventerEditorTree::_on_popup_menu_id_pressed(const int &p_id)
+{
+    switch (static_cast<MenuAction>(p_id))
+    {
+		case ACTION_CUT:
+            cut_selected_commands();
+            break;
+		case ACTION_COPY:
+            copy_selected_commands();
+            break;
+		case ACTION_PASTE:
+            paste_commands();
+            break;
+		case ACTION_DUPLICATE:
+            duplicate_selected_commands();
+            break;
+		case ACTION_EDIT_SCRIPT:
+            edit_selected_command_script();
+            break;
+		case ACTION_DELETE:
+            delete_selected_commands();
+			break;
+	}
+}
+
+void EventerEditorTree::_on_item_activated()
+{
+    auto selected_command = get_selected_command();
+    if (not selected_command.is_valid()) { return; }
+    if (not selected_command->get_edit_flags().has_flag(EVBase::EDIT_FLAGS_CAN_MODIFY)) { return; }
+
+    EditorInterface::get_singleton()->edit_resource(selected_command);
+}
+
+void EventerEditorTree::_on_item_mouse_selected(const Vector2 &p_mouse_position, const MouseButton &p_mouse_button_index)
+{
+    if (p_mouse_button_index == MouseButton::RIGHT)
+    {
+        show_popup_menu();
+    }
+}
+
 void EventerEditorTree::_on_hsplit_drag_ended()
 {
-    emit_signal(SNAME("separation_changed"), hsplit->get_split_offset(0));
+    emit_signal("separation_changed", hsplit->get_split_offset(0));
 }
 
 
@@ -576,6 +874,9 @@ EventerEditor::EventerEditor()
     tabs->set_v_size_flags(SIZE_SHRINK_CENTER);
     tabs->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
     tabs->hide();
+    tabs->connect("tab_button_pressed", callable_mp(this, &EventerEditor::_on_tab_button_pressed));
+    tabs->get_tab_bar()->set_close_with_middle_mouse(true);
+    tabs->get_tab_bar()->connect("tab_close_pressed", callable_mp(tabs->get_tab_bar(), &TabBar::remove_tab));
     add_child(tabs);
 }
 
@@ -594,9 +895,10 @@ void EventerEditor::hide_editor()
 void EventerEditor::open_sequence(Ref<EventerSequence> p_sequence)
 {
     ERR_FAIL_NULL(p_sequence);
+
     int i = 0;
     bool already_open = false;
-    for (Variant &child : get_children())
+    for (Variant &child : tabs->get_children())
     {
         EventerEditorTree *tab = Object::cast_to<EventerEditorTree>(child);
         if (not tab) { continue; }
@@ -622,9 +924,12 @@ void EventerEditor::open_sequence(Ref<EventerSequence> p_sequence)
         }
 
         tab->setup(p_sequence);
+        tab->set_focus_mode(FOCUS_CLICK);
         tab->set_separation(separation);
-        tab->connect(SNAME("closed"), callable_mp(this, &EventerEditor::_on_tab_closed), CONNECT_ONE_SHOT);
-        tab->connect(SNAME("separation_changed"), callable_mp(this, &EventerEditor::set_separation));
+        tab->connect("closed", callable_mp(this, &EventerEditor::_on_tab_closed), CONNECT_ONE_SHOT);
+        tab->connect("separation_changed", callable_mp(this, &EventerEditor::set_separation));
+        tab->connect("copy_requested", callable_mp(this, &EventerEditor::copy_commands));
+        tab->connect("paste_requested", callable_mp(this, &EventerEditor::paste_commands), CONNECT_APPEND_SOURCE_OBJECT);
 
         tabs->add_child(tab);
         tabs->set_tab_button_icon(tabs->get_child_count() - 2, EditorNode::get_singleton()->get_editor_theme()->get_icon(SNAME("Close"), EditorStringName(EditorIcons)));
@@ -635,6 +940,66 @@ void EventerEditor::open_sequence(Ref<EventerSequence> p_sequence)
     {
         tabs->set_current_tab(i);
     }
+}
+
+void EventerEditor::copy_commands(Array p_commands)
+{
+    clipboard.clear();
+
+    for (const Variant &command : p_commands)
+    {
+        Ref<EVBase> command_inst = command;
+        if (command_inst.is_valid())
+        {
+            clipboard.push_back(command);
+        }
+    }
+}
+
+void EventerEditor::paste_commands(Ref<EVBase> p_paste_target, EventerEditorTree *p_tree)
+{
+    ERR_FAIL_COND_MSG(not p_tree, "No tree to paste to");
+    ERR_FAIL_NULL(p_paste_target);
+    if (clipboard.is_empty()) { return; }
+
+    auto undo_redo = EditorInterface::get_singleton()->get_editor_undo_redo();
+    if (undo_redo->is_committing_action()) { return; }
+    undo_redo->create_action("Paste Command(s)");
+
+    for (Ref<EVBase> &command : clipboard)
+    {
+        if (not command.is_valid()) { continue; }
+        
+        if (p_paste_target->can_add_children())
+        {
+            undo_redo->add_do_method(p_paste_target.ptr(), "_add_child", command);
+            undo_redo->add_undo_method(p_paste_target.ptr(), "_remove_child", command);
+        }
+        else
+        {
+            Ref<EVBase> valid_parent = p_paste_target->get_parent();
+            while (valid_parent->get_parent().is_valid() and not valid_parent->can_add_children())
+            {
+                valid_parent = valid_parent->get_parent();
+            }
+
+            if (valid_parent.is_valid())
+            {
+                undo_redo->add_do_method(valid_parent.ptr(), "_add_child", command);
+                undo_redo->add_undo_method(valid_parent.ptr(), "_remove_child", command);
+            }
+            else
+            {
+                undo_redo->add_do_method(p_tree->get_root_command().ptr(), "_add_child", command);
+                undo_redo->add_undo_method(p_tree->get_root_command().ptr(), "_remove_child", command);
+            }
+        }
+    }
+
+    undo_redo->add_do_method(p_tree, "_refresh");
+    undo_redo->add_undo_method(p_tree, "_refresh");
+
+    undo_redo->commit_action();
 }
 
 void EventerEditor::save_current()
@@ -658,6 +1023,17 @@ void EventerEditor::save_all()
         {
             tab->save();
         }
+    }
+}
+
+void EventerEditor::close_tab(const int &p_tab)
+{
+    ERR_FAIL_INDEX(p_tab, tabs->get_child_count());
+
+    EventerEditorTree *tab = Object::cast_to<EventerEditorTree>(tabs->get_child(p_tab));
+    if (tab)
+    {
+        tab->close();
     }
 }
 
@@ -697,17 +1073,30 @@ PackedStringArray EventerEditor::get_open_tab_paths() const
 
     if (tabs->get_child_count() > 0)
     {
-        EventerEditorTree *tab = Object::cast_to<EventerEditorTree>(tabs->get_child(0));
-        if (tab)
+        for (const Variant &tab : tabs->get_children())
         {
-            if (not tab->get_sequence()->get_path().is_empty())
+            EventerEditorTree *tab_inst = Object::cast_to<EventerEditorTree>(tab);
+            if (tab_inst)
             {
-                ret.append(tab->get_sequence()->get_path());
+                if (not tab_inst->get_sequence()->get_path().is_empty())
+                {
+                    ret.append(tab_inst->get_sequence()->get_path());
+                }
             }
         }
     }
 
     return ret;
+}
+
+void EventerEditor::_on_tab_button_pressed(const int &p_tab)
+{
+    EventerEditorTree *tab = Object::cast_to<EventerEditorTree>(tabs->get_tab_control(p_tab));
+    if (tab)
+    {
+        // TODO confirm save dialog
+        tab->close();
+    }
 }
 
 void EventerEditor::_on_tab_closed()
@@ -754,43 +1143,40 @@ void EditorPluginEventer::set_window_layout(Ref<ConfigFile> p_layout)
     if (p_layout->has_section("Eventer"))
     {
         editor->set_separation(p_layout->get_value("Eventer", "separation"));
-    }
-}
 
-void EditorPluginEventer::get_window_layout(Ref<ConfigFile> p_layout)
-{
-    p_layout->set_value("Eventer", "separation", editor->get_separation());
-}
-
-void EditorPluginEventer::set_state(const Dictionary &p_state)
-{
-    PackedStringArray paths = p_state.get("open_file_paths", PackedStringArray());
-    if (not paths.is_empty())
-    {
-        for (const String &path : paths)
+        PackedStringArray paths = p_layout->get_value("Eventer", "open_file_paths", PackedStringArray());
+        if (not paths.is_empty())
         {
-            if (ResourceLoader::exists(path))
+            for (const String &path : paths)
             {
-                Ref<EventerSequence> sequence = ResourceLoader::load(path);
-                if (sequence.is_valid())
+                bool failed = true;
+                if (ResourceLoader::exists(path))
                 {
-                    editor->open_sequence(sequence);
+                    Ref<EventerSequence> sequence = ResourceLoader::load(path);
+                    if (sequence.is_valid())
+                    {
+                        failed = false;
+                        editor->open_sequence(sequence);
+                    }
+                }
+                
+                if (failed)
+                {
+                    ERR_PRINT(vformat("Can't reopen sequence: %s", path));
                 }
             }
         }
     }
 }
 
-Dictionary EditorPluginEventer::get_state() const 
+void EditorPluginEventer::get_window_layout(Ref<ConfigFile> p_layout)
 {
-    Dictionary ret;
-    ret.set("open_file_paths", editor->get_open_tab_paths());
-    return ret;
+    p_layout->set_value("Eventer", "separation", editor->get_separation());
+    p_layout->set_value("Eventer", "open_file_paths", editor->get_open_tab_paths());
 }
 
 EditorPluginEventer::EditorPluginEventer()
 {
-    GLOBAL_DEF_BASIC(PropertyInfo(Variant::PACKED_STRING_ARRAY, "eventer/commands/command_directories", PROPERTY_HINT_TYPE_STRING, vformat("%s/%s:", Variant::STRING, PROPERTY_HINT_DIR)), PackedStringArray());
     editor = memnew(EventerEditor);
     editor->hide();
     EditorInterface::get_singleton()->get_editor_main_screen()->add_child(editor);

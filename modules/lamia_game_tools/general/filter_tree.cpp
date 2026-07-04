@@ -64,16 +64,11 @@ bool FilterTree::_update_filter(String p_filter, TreeItem *p_parent)
             p_parent->set_selectable(0, p_parent->get_meta(SNAME("was_selectable")));
             p_parent->remove_meta(SNAME("was_selectable"));
         }
-        if (p_parent->has_meta(SNAME("original_color")))
+/*         if (p_parent->has_meta(SNAME("original_color")))
         {
             p_parent->set_custom_color(0, p_parent->get_meta(SNAME("original_color")));
             p_parent->remove_meta(SNAME("original_color"));
-        }
-        // p_parent->clear_custom_color(0);
-        // if (p_parent->get_metadata(0))
-        // {
-        //     p_parent->set_selectable(0, true);
-        // }
+        } */
     }
     else if (keep_for_children)
     {
@@ -114,18 +109,10 @@ bool FilterTree::_update_filter(String p_filter, TreeItem *p_parent)
         }
         else
         {
+            // p_parent->set_meta(SNAME("original_color"), p_parent->get_custom_color(0));
+            // p_parent->set_custom_color(0, Color(0.6627451, 0.6627451, 0.6627451, 1));
             p_parent->set_meta(SNAME("was_selectable"), p_parent->is_selectable(0));
-            p_parent->set_meta(SNAME("original_color"), p_parent->get_custom_color(0));
-            p_parent->set_custom_color(0, Color(0.6627451, 0.6627451, 0.6627451, 1));
             p_parent->set_selectable(0, false);
-        }
-    }
-    if (is_root)
-    {
-        set_hide_root(not selectable);
-        if (is_root_hidden())
-        {
-            p_parent->set_collapsed(false);
         }
     }
 

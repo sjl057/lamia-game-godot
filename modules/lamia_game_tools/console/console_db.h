@@ -17,7 +17,7 @@ private:
     static AHashMap<StringName, StringName> builtin_commands;
     static AHashMap<StringName, Ref<Script>> script_commands;
 
-    static void collect_scripts_from_dir(String p_path, AHashMap<StringName, Ref<Script>> *r_ret);
+    // static void collect_scripts_from_dir(String p_path, AHashMap<StringName, Ref<Script>> *r_ret);
 
 protected:
     static void _bind_methods();

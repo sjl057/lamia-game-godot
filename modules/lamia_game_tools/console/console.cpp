@@ -130,17 +130,20 @@ void Console::_notification(int p_what)
             break;
 
         case NOTIFICATION_VISIBILITY_CHANGED:
-            if (is_ready())
+            if (not Engine::get_singleton()->is_editor_hint())
             {
-                if (is_visible())
+                if (is_ready())
                 {
-                    set_process_input(true);
-                    text_input->grab_focus();
-                }
-                else
-                {
-                    set_process_input(false);
-                    text_input->release_focus();
+                    if (is_visible())
+                    {
+                        set_process_input(true);
+                        text_input->grab_focus();
+                    }
+                    else
+                    {
+                        set_process_input(false);
+                        text_input->release_focus();
+                    }
                 }
             }
             break;

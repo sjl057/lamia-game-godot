@@ -23,6 +23,7 @@ enum EVResult
     EV_RUNNING,
     EV_NEXT_IN_TREE,
     EV_NEXT_SIBLING,
+    EV_EXIT_BRANCH,
     EV_ABORT
 };
 
